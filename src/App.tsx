@@ -883,7 +883,7 @@ export function App() {
         </main>
       ) : (
         /* VIEW 2: FOCUSED SINGLE-RESULT WORKSPACE */
-        <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-8 flex flex-col gap-6">
+        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 flex flex-col gap-6">
           {/* Top Breadcrumb + Tool Title */}
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -2010,10 +2010,12 @@ export function App() {
             </div>
           ) : (
             <div
-              className={`grid gap-4 ${
-                selectedTool === 'veol-banner'
-                  ? 'grid-cols-1 md:grid-cols-2'
-                  : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
+              className={`grid gap-5 ${
+                isVeolTool || items.length === 1
+                  ? 'grid-cols-1'
+                  : selectedTool === 'veol-banner'
+                  ? 'grid-cols-1 lg:grid-cols-2'
+                  : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
               }`}
             >
               {items.map((item, idx) => {

@@ -323,14 +323,14 @@ export const VeolCropViewport: React.FC<VeolCropViewportProps> = ({
       onLostPointerCapture={handlePointerUp}
       onWheel={handleWheel}
       onDoubleClick={handleDoubleClick}
-      className={`drag-handle relative h-52 bg-stone-950 flex items-center justify-center overflow-hidden border-b border-stone-200 p-3 select-none ${
+      className={`drag-handle relative min-h-[380px] sm:min-h-[460px] md:min-h-[520px] bg-stone-950 flex items-center justify-center overflow-hidden border-b border-stone-200 p-4 sm:p-6 select-none ${
         dragMode === 'pan' ? 'dragging' : ''
       }`}
     >
       {/* Wrapper matching exact aspect ratio of the source image */}
       <div
         ref={imgContainerRef}
-        className="relative inline-flex max-h-full max-w-full overflow-hidden rounded-lg"
+        className="relative inline-flex max-h-full max-w-full overflow-hidden rounded-xl shadow-2xl"
       >
         {/* Full Source Image */}
         <img
@@ -340,7 +340,7 @@ export const VeolCropViewport: React.FC<VeolCropViewportProps> = ({
           style={{
             transform: `rotate(${rotateDeg}deg) scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`,
           }}
-          className="max-h-[184px] w-auto h-auto object-contain block select-none pointer-events-none transition-transform duration-150"
+          className="max-h-[340px] sm:max-h-[420px] md:max-h-[480px] w-auto h-auto object-contain block select-none pointer-events-none transition-transform duration-150"
         />
 
         {/* Bright Crop Frame with Darkened Surroundings (box-shadow 9999px) */}
@@ -379,49 +379,49 @@ export const VeolCropViewport: React.FC<VeolCropViewportProps> = ({
             data-handle="nw"
             onPointerDown={(e) => handleCornerPointerDown(e, 'nw')}
             title="Tirer ce coin pour redimensionner le cadre"
-            className="pointer-events-auto absolute -top-2 -left-2 w-4 h-4 flex items-center justify-center cursor-nwse-resize group/h"
+            className="pointer-events-auto absolute -top-3 -left-3 w-6 h-6 flex items-center justify-center cursor-nwse-resize group/h"
           >
-            <span className="w-2.5 h-2.5 bg-orange-500 border border-white rounded-sm shadow group-hover/h:scale-125 transition-transform" />
+            <span className="w-3.5 h-3.5 bg-orange-500 border-2 border-white rounded shadow-md group-hover/h:scale-125 transition-transform" />
           </div>
 
           <div
             data-handle="ne"
             onPointerDown={(e) => handleCornerPointerDown(e, 'ne')}
             title="Tirer ce coin pour redimensionner le cadre"
-            className="pointer-events-auto absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center cursor-nesw-resize group/h"
+            className="pointer-events-auto absolute -top-3 -right-3 w-6 h-6 flex items-center justify-center cursor-nesw-resize group/h"
           >
-            <span className="w-2.5 h-2.5 bg-orange-500 border border-white rounded-sm shadow group-hover/h:scale-125 transition-transform" />
+            <span className="w-3.5 h-3.5 bg-orange-500 border-2 border-white rounded shadow-md group-hover/h:scale-125 transition-transform" />
           </div>
 
           <div
             data-handle="sw"
             onPointerDown={(e) => handleCornerPointerDown(e, 'sw')}
             title="Tirer ce coin pour redimensionner le cadre"
-            className="pointer-events-auto absolute -bottom-2 -left-2 w-4 h-4 flex items-center justify-center cursor-nesw-resize group/h"
+            className="pointer-events-auto absolute -bottom-3 -left-3 w-6 h-6 flex items-center justify-center cursor-nesw-resize group/h"
           >
-            <span className="w-2.5 h-2.5 bg-orange-500 border border-white rounded-sm shadow group-hover/h:scale-125 transition-transform" />
+            <span className="w-3.5 h-3.5 bg-orange-500 border-2 border-white rounded shadow-md group-hover/h:scale-125 transition-transform" />
           </div>
 
           <div
             data-handle="se"
             onPointerDown={(e) => handleCornerPointerDown(e, 'se')}
             title="Tirer ce coin pour redimensionner le cadre"
-            className="pointer-events-auto absolute -bottom-2 -right-2 w-4 h-4 flex items-center justify-center cursor-nwse-resize group/h"
+            className="pointer-events-auto absolute -bottom-3 -right-3 w-6 h-6 flex items-center justify-center cursor-nwse-resize group/h"
           >
-            <span className="w-2.5 h-2.5 bg-orange-500 border border-white rounded-sm shadow group-hover/h:scale-125 transition-transform" />
+            <span className="w-3.5 h-3.5 bg-orange-500 border-2 border-white rounded shadow-md group-hover/h:scale-125 transition-transform" />
           </div>
 
           {/* Dimension Pill inside frame */}
-          <span className="absolute top-1 left-1.5 px-1.5 py-0.5 rounded bg-stone-950/80 text-white font-mono text-[9px] font-bold tracking-tight">
+          <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-stone-950/85 text-white font-mono text-[10px] font-bold tracking-tight shadow border border-white/10">
             {displayCropW}×{displayCropH} {!isFreeform && zoom > 1.02 ? `(${zoom.toFixed(1)}×)` : ''}
           </span>
         </div>
       </div>
 
       {/* Bottom Interactive Controls Bar */}
-      <div className="absolute bottom-2 left-2.5 right-2.5 flex items-center justify-between gap-2 pointer-events-none">
+      <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2 pointer-events-none">
         <span
-          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg backdrop-blur font-mono text-[10px] font-medium transition ${
+          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg backdrop-blur font-mono text-[11px] font-medium transition ${
             isDragging
               ? 'bg-orange-500 text-white shadow-sm'
               : 'bg-stone-900/85 text-stone-200 border border-white/10'
