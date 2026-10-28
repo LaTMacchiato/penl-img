@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .bg-checkerboard-light {
+    background-image: 
+      linear-gradient(45deg, #e7e5e4 25%, transparent 25%), 
+      linear-gradient(-45deg, #e7e5e4 25%, transparent 25%), 
+      linear-gradient(45deg, transparent 75%, #e7e5e4 75%), 
+      linear-gradient(-45deg, transparent 75%, #e7e5e4 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    background-color: #fafaf9;
+  }
+
+  .drag-handle {
+    cursor: grab;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .drag-handle.dragging {
+    cursor: grabbing;
+  }
+}
+
+dialog::backdrop {
+  background-color: rgba(28, 25, 23, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d6d3d1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a29e;
+}

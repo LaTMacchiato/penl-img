@@ -1,0 +1,18 @@
+{
+  "name": "Penl.img — Suite Image 100% Locale",
+  "short_name": "Penl.img",
+  "description": "Redimensionner, compresser, convertir, détourer et générer vos visuels VEOL 100% en local dans votre navigateur.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FAF8F5",
+  "theme_color": "#1C1917",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
