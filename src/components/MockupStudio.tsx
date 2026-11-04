@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { ImageItem } from '../types';
-import { Smartphone, Laptop, Download, Move, Maximize2, ShieldCheck, Sparkles } from 'lucide-react';
+import { Smartphone, Laptop, Download, Move, Maximize2, ShieldCheck, Check } from 'lucide-react';
 import { enforce72DpiOnPngBlob } from '../utils/exifAndDpi';
 
 export type DeviceType = 'smartphone' | 'laptop';
@@ -20,6 +20,9 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
   const [panY, setPanY] = useState(0); // Défilement vertical de la capture (0-100%)
   const [isDownloading, setIsDownloading] = useState(false);
 
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const loadedImageRef = useRef<{ url: string; img: HTMLImageElement } | null>(null);
+
   const activeItem = items[activeItemIndex] || items[0] || null;
 
   // Background presets (Transparent en 1er par défaut)
@@ -33,13 +36,9 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
     { label: 'Dégradé Crépuscule', value: 'linear-gradient(135deg, #ffedd5 0%, #fee2e2 100%)' },
   ];
 
-  // Draw and export mockup to Canvas (HD 2400x1600 or VEOL 1280x853 @ 72 ppp)
-  const handleDownload = async (target: 'hd' | 'veol') => {
-    if (!activeItem) return;
-    setIsDownloading(true);
-
-    try {
-      const canvas = document.createElement('canvas');
+  // Rendu Canvas unifié (utilisé à la fois pour l'aperçu Retina et l'export téléchargé)
+  const renderCanvas = useCallback(
+    (canvas: HTMLCanvasElement, img: HTMLImageElement | null) => {
       canvas.width = 2400;
       canvas.height = 1600;
       const ctx = canvas.getContext('2d')!;
@@ -63,14 +62,7 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
         ctx.fillRect(0, 0, 2400, 1600);
       }
 
-      // 2. Charger la capture
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      await new Promise<void>((res, rej) => {
-        img.onload = () => res();
-        img.onerror = () => rej(new Error('Erreur de chargement image'));
-        img.src = activeItem.originalUrl;
-      });
+      if (!img) return;
 
       const imgAspect = img.naturalWidth / img.naturalHeight;
 
@@ -81,41 +73,48 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
         const lx = (2400 - lw) / 2;
         const ly = (1600 - lh) / 2 - 20;
 
-        const baseW = lw * 1.14;
+        const baseW = lw * 1.12;
         const baseX = (2400 - baseW) / 2;
         const baseY = ly + lh;
-        const baseH = 26;
+        const baseH = 22;
 
-        // Ombre portée sous l'ordinateur
+        // Ombre portée douce sous l'ordinateur (alignée au millimètre sur le corps du PC)
         if (showShadow) {
           ctx.save();
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
-          ctx.shadowBlur = 60;
-          ctx.shadowOffsetY = 28;
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.32)';
+          ctx.shadowBlur = 55;
+          ctx.shadowOffsetY = 24;
           ctx.fillStyle = '#1c1917';
           ctx.beginPath();
-          ctx.roundRect(lx, ly, lw, lh, 20);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.roundRect(baseX, baseY, baseW, baseH, [0, 0, 16, 16]);
+          ctx.roundRect(lx, ly, lw, lh, [18, 18, 0, 0]);
+          ctx.roundRect(baseX, baseY, baseW, baseH, [2, 2, 12, 12]);
           ctx.fill();
           ctx.restore();
         }
 
-        // 1. Capot écran PC (Châssis sombre)
+        // 1. Capot écran PC (Châssis sombre, bordure fine moderne)
         ctx.fillStyle = '#1c1917';
         ctx.beginPath();
-        ctx.roundRect(lx, ly, lw, lh, [20, 20, 4, 4]);
+        ctx.roundRect(lx, ly, lw, lh, [18, 18, 2, 2]);
         ctx.fill();
 
-        // Webcam supérieure
-        ctx.fillStyle = '#44403c';
+        // Fin contour du capot
+        ctx.strokeStyle = '#292524';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Webcam supérieure centrée
+        ctx.fillStyle = '#383533';
         ctx.beginPath();
-        ctx.arc(lx + lw / 2, ly + 14, 4, 0, Math.PI * 2);
+        ctx.arc(lx + lw / 2, ly + 12, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#171717';
+        ctx.beginPath();
+        ctx.arc(lx + lw / 2, ly + 12, 1.5, 0, Math.PI * 2);
         ctx.fill();
 
-        // 2. Surface d'affichage (Bordure fine 28 px)
-        const bezel = 28;
+        // 2. Surface d'affichage (Bordure ultra-fine de 24 px pour un look élégant et moderne)
+        const bezel = 24;
         const sx = lx + bezel;
         const sy = ly + bezel;
         const sw = lw - bezel * 2;
@@ -123,10 +122,10 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
 
         ctx.save();
         ctx.beginPath();
-        ctx.roundRect(sx, sy, sw, sh, 6);
+        ctx.roundRect(sx, sy, sw, sh, 4);
         ctx.clip();
 
-        // Fond sombre de l'écran éteint
+        // Fond sombre de l'écran
         ctx.fillStyle = '#0c0a09';
         ctx.fillRect(sx, sy, sw, sh);
 
@@ -148,7 +147,7 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
           drawX = sx + (sw - drawW) / 2;
           drawY = sy + (sh - drawH) / 2;
         } else {
-          // Cover mode
+          // Cover mode (remplit la largeur et défilement vertical)
           if (imgAspect > screenAspect) {
             drawH = sh;
             drawW = sh * imgAspect;
@@ -163,59 +162,73 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
         ctx.drawImage(img, drawX, drawY, drawW, drawH);
         ctx.restore();
 
-        // 3. Base en aluminium brossé
-        // Sous-lèvre d'assise
-        ctx.fillStyle = '#71717a';
-        ctx.beginPath();
-        ctx.roundRect(baseX - 4, baseY + 6, baseW + 8, baseH, [0, 0, 16, 16]);
-        ctx.fill();
+        // 3. Base en aluminium brossé (Unibody propre, sans artefact de coin)
+        // Charnière noire
+        ctx.fillStyle = '#1c1917';
+        ctx.fillRect(lx + 120, baseY - 2, lw - 240, 3);
 
-        // Dégradé supérieur aluminium
+        // Châssis aluminium unibody avec coins arrondis continus
+        ctx.beginPath();
+        ctx.roundRect(baseX, baseY, baseW, baseH, [2, 2, 12, 12]);
         const baseGrad = ctx.createLinearGradient(baseX, baseY, baseX, baseY + baseH);
-        baseGrad.addColorStop(0, '#e4e4e7');
-        baseGrad.addColorStop(0.5, '#d4d4d8');
-        baseGrad.addColorStop(1, '#a1a1aa');
+        baseGrad.addColorStop(0, '#f4f4f5'); // filet lumineux supérieur
+        baseGrad.addColorStop(0.12, '#e4e4e7');
+        baseGrad.addColorStop(0.7, '#d4d4d8');
+        baseGrad.addColorStop(1, '#a1a1aa'); // chanfrein inférieur
         ctx.fillStyle = baseGrad;
-        ctx.beginPath();
-        ctx.roundRect(baseX, baseY, baseW, baseH, [4, 4, 16, 16]);
         ctx.fill();
 
-        // Encoche centrale
+        // Liseré inférieur continu (zéro débordement)
+        ctx.strokeStyle = '#71717a';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Encoche centrale pour ouverture facile
+        const notchW = 140;
+        const notchH = 6;
+        const notchX = (2400 - notchW) / 2;
+        ctx.beginPath();
+        ctx.roundRect(notchX, baseY, notchW, notchH, [0, 0, 5, 5]);
         ctx.fillStyle = '#71717a';
-        ctx.beginPath();
-        ctx.roundRect(2400 / 2 - 80, baseY, 160, 8, [0, 0, 6, 6]);
         ctx.fill();
 
+        // Ombrage creux de l'encoche
+        ctx.fillStyle = '#52525b';
+        ctx.fillRect(notchX + 6, baseY, notchW - 12, 1.5);
       } else {
         // Smartphone (True 9:19 ratio)
-        const pw = 680;
-        const ph = 1435;
+        const pw = 660;
+        const ph = 1420;
         const px = (2400 - pw) / 2;
         const py = (1600 - ph) / 2;
 
         if (showShadow) {
           ctx.save();
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
-          ctx.shadowBlur = 65;
-          ctx.shadowOffsetY = 35;
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.32)';
+          ctx.shadowBlur = 60;
+          ctx.shadowOffsetY = 30;
           ctx.fillStyle = '#1c1917';
           ctx.beginPath();
-          ctx.roundRect(px, py, pw, ph, 72);
+          ctx.roundRect(px, py, pw, ph, 64);
           ctx.fill();
           ctx.restore();
         }
 
-        // Boîtier extérieur
+        // Boîtier extérieur smartphone
         ctx.fillStyle = '#1c1917';
         ctx.beginPath();
-        ctx.roundRect(px, py, pw, ph, 68);
+        ctx.roundRect(px, py, pw, ph, 64);
         ctx.fill();
 
+        ctx.strokeStyle = '#292524';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
         // Écran smartphone
-        const sx = px + 24;
-        const sy = py + 24;
-        const sw = pw - 48;
-        const sh = ph - 48;
+        const sx = px + 20;
+        const sy = py + 20;
+        const sw = pw - 40;
+        const sh = ph - 40;
 
         ctx.save();
         ctx.beginPath();
@@ -256,17 +269,59 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
         ctx.drawImage(img, drawX, drawY, drawW, drawH);
 
         // Dynamic Island
+        const islandW = 150;
+        const islandH = 34;
         ctx.fillStyle = '#000000';
         ctx.beginPath();
-        ctx.roundRect(sx + sw / 2 - 80, sy + 24, 160, 36, 18);
+        ctx.roundRect(sx + (sw - islandW) / 2, sy + 20, islandW, islandH, 17);
+        ctx.fill();
+
+        // Objectif caméra frontal
+        ctx.fillStyle = '#1c1917';
+        ctx.beginPath();
+        ctx.arc(sx + (sw - islandW) / 2 + islandW - 24, sy + 20 + islandH / 2, 4.5, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.restore();
       }
+    },
+    [bgColor, device, fitMode, panY, showShadow]
+  );
 
-      let exportCanvas = canvas;
+  // Mise à jour de l'aperçu direct dans le canvas à chaque changement de paramètre
+  useEffect(() => {
+    if (!activeItem) return;
+
+    const updatePreview = (img: HTMLImageElement) => {
+      if (previewCanvasRef.current) {
+        renderCanvas(previewCanvasRef.current, img);
+      }
+    };
+
+    if (loadedImageRef.current && loadedImageRef.current.url === activeItem.originalUrl) {
+      updatePreview(loadedImageRef.current.img);
+    } else {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        loadedImageRef.current = { url: activeItem.originalUrl, img };
+        updatePreview(img);
+      };
+      img.src = activeItem.originalUrl;
+    }
+  }, [activeItem, renderCanvas]);
+
+  // Téléchargement du mockup (HD ou VEOL)
+  const handleDownload = async (target: 'hd' | 'veol') => {
+    if (!activeItem || !previewCanvasRef.current) return;
+    setIsDownloading(true);
+
+    try {
+      const sourceCanvas = previewCanvasRef.current;
+      let exportCanvas = sourceCanvas;
+
       if (target === 'veol') {
-        // Sous-échantillonnage de précision à 1280x853 (72 ppp)
+        // Sous-échantillonnage de haute précision à 1280x853 pour VEOL
         const veolW = 1280;
         const veolH = Math.round((1280 * 1600) / 2400); // 853 px
         const vCanvas = document.createElement('canvas');
@@ -275,7 +330,7 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
         const vCtx = vCanvas.getContext('2d')!;
         vCtx.imageSmoothingEnabled = true;
         vCtx.imageSmoothingQuality = 'high';
-        vCtx.drawImage(canvas, 0, 0, veolW, veolH);
+        vCtx.drawImage(sourceCanvas, 0, 0, veolW, veolH);
         exportCanvas = vCanvas;
       }
 
@@ -324,7 +379,7 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
             <button
               type="button"
               onClick={() => setDevice('laptop')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                 device === 'laptop'
                   ? 'bg-stone-900 text-white shadow-sm'
                   : 'text-stone-700 hover:text-stone-900'
@@ -336,7 +391,7 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
             <button
               type="button"
               onClick={() => setDevice('smartphone')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                 device === 'smartphone'
                   ? 'bg-stone-900 text-white shadow-sm'
                   : 'text-stone-700 hover:text-stone-900'
@@ -353,7 +408,7 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
               type="button"
               onClick={() => setFitMode('cover')}
               title="Remplir la largeur et faire défiler verticalement"
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
                 fitMode === 'cover'
                   ? 'bg-white text-stone-900 shadow-sm font-semibold'
                   : 'text-stone-600 hover:text-stone-900'
@@ -366,7 +421,7 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
               type="button"
               onClick={() => setFitMode('contain')}
               title="Afficher la capture entière sans coupure"
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
                 fitMode === 'contain'
                   ? 'bg-white text-stone-900 shadow-sm font-semibold'
                   : 'text-stone-600 hover:text-stone-900'
@@ -406,7 +461,7 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
                   onClick={() => setBgColor(bg.value)}
                   style={isTransparent ? undefined : { background: bg.value }}
                   title={bg.label}
-                  className={`w-6 h-6 rounded-full border shadow-sm transition-all relative ${
+                  className={`w-6 h-6 rounded-full border shadow-sm transition-all relative cursor-pointer ${
                     isTransparent
                       ? 'bg-[linear-gradient(45deg,#d4d4d8_25%,transparent_25%),linear-gradient(-45deg,#d4d4d8_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#d4d4d8_75%),linear-gradient(-45deg,transparent_75%,#d4d4d8_75%)] bg-[size:6px_6px] bg-[position:0_0,0_3px,3px_-3px,-3px_0] bg-white'
                       : ''
@@ -424,7 +479,7 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
           <button
             type="button"
             onClick={() => setShowShadow(!showShadow)}
-            className={`text-xs px-2.5 py-1.5 rounded-lg border transition ${
+            className={`text-xs px-2.5 py-1.5 rounded-lg border transition cursor-pointer ${
               showShadow
                 ? 'bg-stone-100 text-stone-800 border-stone-300 font-medium'
                 : 'text-stone-400 border-dashed border-stone-300 hover:text-stone-600'
@@ -462,78 +517,12 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
         </div>
       </div>
 
-      {/* Scène de prévisualisation interactive */}
-      <div
-        style={bgColor === 'transparent' ? undefined : { background: bgColor }}
-        className={`relative w-full min-h-[460px] sm:min-h-[560px] rounded-3xl border border-stone-200/90 flex items-center justify-center p-6 sm:p-12 overflow-hidden shadow-inner transition-colors ${
-          bgColor === 'transparent'
-            ? 'bg-[linear-gradient(45deg,#f0eee9_25%,transparent_25%),linear-gradient(-45deg,#f0eee9_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#f0eee9_75%),linear-gradient(-45deg,transparent_75%,#f0eee9_75%)] bg-[size:20px_20px] bg-[position:0_0,0_10px,10px_-10px,-10px_0] bg-white'
-            : ''
-        }`}
-      >
-        {device === 'laptop' ? (
-          /* Mockup Ordinateur Portable (Ratio 16:10 strictement verrouillé) */
-          <div className="relative w-full max-w-2xl flex flex-col items-center select-none">
-            {/* Capot écran PC (Strict 16:10, impossible de s'étirer verticalement) */}
-            <div
-              className={`relative w-full aspect-[16/10] bg-stone-900 rounded-t-2xl p-2.5 sm:p-3.5 border border-stone-800 flex flex-col overflow-hidden shrink-0 ${
-                showShadow ? 'shadow-[0_25px_60px_-15px_rgba(0,0,0,0.35)]' : ''
-              }`}
-            >
-              {/* Webcam */}
-              <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-stone-700 rounded-full z-20" />
-
-              {/* Surface d'affichage intérieure (bornée strictement) */}
-              <div className="relative w-full flex-1 min-h-0 bg-stone-950 rounded-lg overflow-hidden flex items-center justify-center">
-                <img
-                  src={activeItem.originalUrl}
-                  alt={activeItem.file.name}
-                  style={{
-                    objectPosition: fitMode === 'contain' ? 'center center' : `center ${panY}%`,
-                  }}
-                  className={`w-full h-full ${
-                    fitMode === 'contain' ? 'object-contain' : 'object-cover'
-                  } transition-[object-position] duration-75 select-none pointer-events-none`}
-                />
-              </div>
-            </div>
-
-            {/* Base en aluminium du PC */}
-            <div className="relative w-[114%] h-3.5 sm:h-5 bg-gradient-to-b from-stone-300 via-stone-350 to-stone-400 rounded-b-xl border-t border-stone-300 shadow-md shrink-0">
-              {/* Encoche centrale */}
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-20 h-1.5 sm:h-2 bg-stone-400/80 rounded-b-md" />
-            </div>
-          </div>
-        ) : (
-          /* Mockup Smartphone (Ratio 9:19 strictement verrouillé) */
-          <div className="relative w-56 sm:w-64 aspect-[9/19] flex flex-col items-center select-none">
-            <div
-              className={`relative w-full h-full bg-stone-900 rounded-[44px] p-2.5 sm:p-3 border-4 border-stone-800 flex flex-col overflow-hidden shrink-0 ${
-                showShadow ? 'shadow-[0_25px_60px_-15px_rgba(0,0,0,0.4)]' : ''
-              }`}
-            >
-              {/* Surface d'affichage */}
-              <div className="relative w-full flex-1 min-h-0 bg-stone-950 rounded-[34px] overflow-hidden">
-                {/* Dynamic Island */}
-                <div className="absolute top-2.5 left-1/2 -translate-x-1/2 w-20 h-5 bg-black rounded-full z-10 flex items-center justify-end px-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-stone-900" />
-                </div>
-
-                {/* Capture d'écran */}
-                <img
-                  src={activeItem.originalUrl}
-                  alt={activeItem.file.name}
-                  style={{
-                    objectPosition: fitMode === 'contain' ? 'center center' : `center ${panY}%`,
-                  }}
-                  className={`w-full h-full ${
-                    fitMode === 'contain' ? 'object-contain' : 'object-cover'
-                  } transition-[object-position] duration-75 select-none pointer-events-none`}
-                />
-              </div>
-            </div>
-          </div>
-        )}
+      {/* Scène de prévisualisation directe Retina (Canvas unifié pixel-perfect) */}
+      <div className="relative w-full min-h-[460px] sm:min-h-[580px] rounded-3xl border border-stone-200/90 flex items-center justify-center p-4 sm:p-8 overflow-hidden shadow-inner bg-[linear-gradient(45deg,#f0eee9_25%,transparent_25%),linear-gradient(-45deg,#f0eee9_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#f0eee9_75%),linear-gradient(-45deg,transparent_75%,#f0eee9_75%)] bg-[size:20px_20px] bg-[position:0_0,0_10px,10px_-10px,-10px_0] bg-white">
+        <canvas
+          ref={previewCanvasRef}
+          className="w-full max-w-2xl sm:max-w-3xl h-auto select-none pointer-events-none drop-shadow-sm transition-all"
+        />
       </div>
 
       {/* Barre de sélection multi-captures */}
@@ -547,7 +536,7 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
               key={it.id}
               type="button"
               onClick={() => setActiveItemIndex(idx)}
-              className={`relative w-16 h-12 rounded-xl overflow-hidden border-2 shrink-0 transition ${
+              className={`relative w-16 h-12 rounded-xl overflow-hidden border-2 shrink-0 transition cursor-pointer ${
                 activeItemIndex === idx
                   ? 'border-orange-600 scale-105 shadow-sm'
                   : 'border-stone-200 opacity-60 hover:opacity-100'
