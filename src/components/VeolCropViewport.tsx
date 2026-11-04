@@ -33,6 +33,59 @@ export const VeolCropViewport: React.FC<VeolCropViewportProps> = ({
   onOpenInspector,
 }) => {
   const imgContainerRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+
+  // Keep refs up to date for non-passive native wheel listener
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const panXRef = useRef(panX);
+  panXRef.current = panX;
+  const panYRef = useRef(panY);
+  panYRef.current = panY;
+  const freeBoxRef = useRef(freeBox);
+  freeBoxRef.current = freeBox;
+  const isFreeformRef = useRef(isFreeform);
+  isFreeformRef.current = isFreeform;
+  const onUpdateCustomCropRef = useRef(onUpdateCustomCrop);
+  onUpdateCustomCropRef.current = onUpdateCustomCrop;
+  const onUpdatePanZoomRef = useRef(onUpdatePanZoom);
+  onUpdatePanZoomRef.current = onUpdatePanZoom;
+
+  // Native non-passive wheel listener to allow e.preventDefault() and stop page scroll
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const delta = e.deltaY < 0 ? 0.15 : -0.15;
+      if (isFreeformRef.current && onUpdateCustomCropRef.current) {
+        const factor = e.deltaY < 0 ? 0.92 : 1.08;
+        const curBox = freeBoxRef.current;
+        const newW = Math.max(0.1, Math.min(1, curBox.width * factor));
+        const newH = Math.max(0.1, Math.min(1, curBox.height * factor));
+        const cx = curBox.x + curBox.width / 2;
+        const cy = curBox.y + curBox.height / 2;
+        const nx = Math.max(0, Math.min(1 - newW, cx - newW / 2));
+        const ny = Math.max(0, Math.min(1 - newH, cy - newH / 2));
+        onUpdateCustomCropRef.current({ x: nx, y: ny, width: newW, height: newH }, true);
+        return;
+      }
+
+      const curZoom = zoomRef.current;
+      const nextZoom = Math.max(1, Math.min(4, Number((curZoom + delta).toFixed(2))));
+      if (nextZoom !== curZoom) {
+        onUpdatePanZoomRef.current(panXRef.current, panYRef.current, nextZoom, true);
+      }
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+    };
+  }, []);
   const [dragMode, setDragMode] = useState<'none' | 'pan' | CornerHandle>('none');
 
   const sw = Math.max(1, item.originalWidth);
@@ -262,27 +315,6 @@ export const VeolCropViewport: React.FC<VeolCropViewportProps> = ({
     }
   };
 
-  // Smooth Wheel / Trackpad zoom
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const delta = e.deltaY < 0 ? 0.15 : -0.15;
-    if (isFreeform && onUpdateCustomCrop) {
-      const factor = e.deltaY < 0 ? 0.92 : 1.08;
-      const newW = Math.max(0.1, Math.min(1, freeBox.width * factor));
-      const newH = Math.max(0.1, Math.min(1, freeBox.height * factor));
-      const cx = freeBox.x + freeBox.width / 2;
-      const cy = freeBox.y + freeBox.height / 2;
-      const nx = Math.max(0, Math.min(1 - newW, cx - newW / 2));
-      const ny = Math.max(0, Math.min(1 - newH, cy - newH / 2));
-      onUpdateCustomCrop({ x: nx, y: ny, width: newW, height: newH }, true);
-      return;
-    }
-    const nextZoom = Math.max(1, Math.min(4, Number((zoom + delta).toFixed(2))));
-    if (nextZoom !== zoom) {
-      onUpdatePanZoom(panX, panY, nextZoom, true);
-    }
-  };
-
   // Double-click to reset frame to centered 1x
   const handleDoubleClick = () => {
     if (isFreeform && onUpdateCustomCrop) {
@@ -316,14 +348,14 @@ export const VeolCropViewport: React.FC<VeolCropViewportProps> = ({
 
   return (
     <div
+      ref={viewportRef}
       data-veol-viewport
       onPointerDown={handlePanPointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onLostPointerCapture={handlePointerUp}
-      onWheel={handleWheel}
       onDoubleClick={handleDoubleClick}
-      className={`drag-handle relative min-h-[380px] sm:min-h-[460px] md:min-h-[520px] bg-stone-950 flex items-center justify-center overflow-hidden border-b border-stone-200 p-4 sm:p-6 select-none ${
+      className={`drag-handle relative min-h-[380px] sm:min-h-[460px] md:min-h-[520px] bg-stone-950 flex items-center justify-center overflow-hidden border-b border-stone-200 p-4 sm:p-6 select-none overscroll-contain ${
         dragMode === 'pan' ? 'dragging' : ''
       }`}
     >
