@@ -46,8 +46,9 @@ export interface PipelineConfig {
   flipH: boolean;
   flipV: boolean;
 
-  // 4. Background Removal
+  // 4. Background Removal & Replacement
   bgRemoveMode: BgRemoveMode;
+  bgReplaceColor: string; // 'transparent', '#ffffff', '#f5f5f5', '#000000', or any hex
   colorKeyHex: string;
   colorTolerance: number; // 0 to 100
   featherEdge: boolean;

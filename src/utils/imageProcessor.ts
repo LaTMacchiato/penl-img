@@ -501,6 +501,29 @@ export async function processSingleImage(
     await applyAiBgRemovalToCanvas(canvas, onStatus);
   }
 
+  // Apply Background Color Replacement if specified and not transparent
+  if (
+    config.bgRemoveMode !== 'none' &&
+    config.bgReplaceColor &&
+    config.bgReplaceColor !== 'transparent'
+  ) {
+    const compositeCanvas = document.createElement('canvas');
+    compositeCanvas.width = outW;
+    compositeCanvas.height = outH;
+    const compCtx = compositeCanvas.getContext('2d')!;
+
+    // 1. Fill solid background replacement color
+    compCtx.fillStyle = config.bgReplaceColor;
+    compCtx.fillRect(0, 0, outW, outH);
+
+    // 2. Draw cutout subject on top
+    compCtx.drawImage(canvas, 0, 0);
+
+    // 3. Copy composite back to main canvas
+    ctx.clearRect(0, 0, outW, outH);
+    ctx.drawImage(compositeCanvas, 0, 0);
+  }
+
   if (config.compressionMode === 'target-size' && config.targetFileSizeKb > 0) {
     const targetBytes = config.targetFileSizeKb * 1024;
     const effectiveMime = targetMime === 'image/png' ? 'image/jpeg' : targetMime;

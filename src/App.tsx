@@ -192,6 +192,7 @@ function getDefaultConfigForTool(tool: ToolId): PipelineConfig {
     flipV: false,
 
     bgRemoveMode: 'none',
+    bgReplaceColor: 'transparent',
     colorKeyHex: '#ffffff',
     colorTolerance: 18,
     featherEdge: true,
@@ -259,7 +260,13 @@ function getDefaultConfigForTool(tool: ToolId): PipelineConfig {
     case 'convert':
       return { ...base, outputFormat: 'image/jpeg', quality: 90 };
     case 'remove-bg':
-      return { ...base, outputFormat: 'image/png', bgRemoveMode: 'color-key', colorTolerance: 20 };
+      return {
+        ...base,
+        outputFormat: 'image/png',
+        bgRemoveMode: 'color-key',
+        bgReplaceColor: 'transparent',
+        colorTolerance: 20,
+      };
     case 'crop':
       return { ...base, cropPreset: '1:1', outputFormat: 'image/jpeg', quality: 90 };
     case 'rename':
@@ -1587,9 +1594,57 @@ export function App() {
                     </div>
                   ) : (
                     <p className="text-xs text-stone-500">
-                      Le modèle neuronal segmente automatiquement le sujet principal dans votre navigateur et exporte en PNG transparent.
+                      Le modèle neuronal segmente automatiquement le sujet principal dans votre navigateur.
                     </p>
                   )}
+
+                  {/* Quick Background Color Replacement */}
+                  <div className="pt-2.5 border-t border-stone-200/80 flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs font-semibold text-stone-500 mr-1 flex items-center gap-1">
+                      NOUVEAU FOND :
+                    </span>
+                    {[
+                      { id: 'transparent', label: 'Transparent (PNG)', dot: 'bg-white border-dashed border-stone-400' },
+                      { id: '#ffffff', label: 'Blanc Pur (#FFF)', dot: 'bg-white border-stone-300 shadow-sm' },
+                      { id: '#f5f5f5', label: 'Gris Studio (#F5)', dot: 'bg-[#f5f5f5] border-stone-300' },
+                      { id: '#1c1917', label: 'Noir Élégant', dot: 'bg-stone-900 border-stone-900' },
+                      { id: '#ea580c', label: 'Orange VEOL', dot: 'bg-orange-600 border-orange-600' },
+                    ].map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() =>
+                          updateConfig({
+                            bgReplaceColor: c.id,
+                            outputFormat: c.id === 'transparent' ? 'image/png' : config.outputFormat,
+                          })
+                        }
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                          config.bgReplaceColor === c.id
+                            ? 'bg-stone-900 text-white border-stone-900 shadow-sm'
+                            : 'bg-[#FAF8F5] text-stone-700 border-stone-200 hover:bg-stone-100'
+                        }`}
+                      >
+                        <span className={`w-3 h-3 rounded-full border ${c.dot}`} />
+                        {c.label}
+                      </button>
+                    ))}
+
+                    <div className="flex items-center gap-1.5 ml-1 pl-2 border-l border-stone-200">
+                      <span className="text-xs text-stone-500 font-medium">Couleur perso :</span>
+                      <input
+                        type="color"
+                        value={
+                          config.bgReplaceColor && config.bgReplaceColor !== 'transparent'
+                            ? config.bgReplaceColor
+                            : '#ffffff'
+                        }
+                        onChange={(e) => updateConfig({ bgReplaceColor: e.target.value })}
+                        className="w-7 h-7 rounded cursor-pointer border border-stone-300 bg-white"
+                        title="Choisir une couleur de fond personnalisée"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <ActionApplyButton
