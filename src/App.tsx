@@ -883,9 +883,9 @@ export function App() {
           <footer className="mt-14 pt-6 border-t border-stone-200/80 flex flex-wrap items-center justify-between gap-4 text-xs text-stone-500 font-mono">
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Penl.img • Exécution 100% navigateur • EXIF préservés par défaut • Dossiers complets</span>
+              <span>Penl.img</span>
             </div>
-            <div className="flex items-center gap-4">
+            <div>
               <button
                 type="button"
                 onClick={() => setIsLegalModalOpen(true)}
@@ -893,8 +893,6 @@ export function App() {
               >
                 Mentions légales & Confidentialité (100% Local)
               </button>
-              <span className="text-stone-300">•</span>
-              <div>JPG • PNG • WEBP • AVIF</div>
             </div>
           </footer>
         </main>
