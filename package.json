@@ -12,7 +12,6 @@
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@fontsource/plus-jakarta-sans": "^5.3.0",
-    "@huggingface/transformers": "^3.1.2",
     "heic2any": "^0.0.4",
     "jszip": "^3.10.1",
     "lucide-react": "^0.460.0",

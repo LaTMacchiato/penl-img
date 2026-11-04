@@ -7,6 +7,6 @@ Suite d'outils image **100% locale dans le navigateur** (aucun upload serveur) :
   - Image article VEOL (`Largeur max ≤ 1280 px`, ratio conservé sans crop, traitement par lot)
 - **Redimensionner & Compresser** (largeur cible, bord max, échelle %, qualité JPG ou poids cible en Ko)
 - **Convertir Format** (`JPG`, `PNG`, `WebP`, `AVIF`)
-- **Retirer le Fond (PNG)** (Baguette magique / couleur ou IA locale `RMBG-1.4`)
+- **Retirer le Fond (PNG)** (Baguette magique / pipette de couleur instantanée)
 - **Recadrer & Pivoter** (avec redimensionnement et compression intégrés)
 - **Renommer un Dossier**

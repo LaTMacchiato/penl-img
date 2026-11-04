@@ -41,7 +41,6 @@ import {
   Pipette,
   HardDriveDownload,
   Wand2,
-  Cpu,
   Check,
   Copy,
   Move,
@@ -110,7 +109,7 @@ const MAIN_TOOLS: ToolCardDef[] = [
     id: 'remove-bg',
     badge: '03 / DÉTOURAGE',
     title: 'Retirer le Fond (PNG)',
-    subtitle: 'Effacez un fond uni à la baguette magique (pipette) ou détourez par IA 100% locale.',
+    subtitle: 'Effacez un fond uni instantanément à la baguette magique ou pipette de couleur.',
     accentBg: 'bg-purple-500/10',
     accentText: 'text-purple-600',
     accentBorder: 'group-hover:border-purple-500/50',
@@ -1614,97 +1613,59 @@ export function App() {
             {selectedTool === 'remove-bg' && (
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
                 <div className="space-y-3 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs font-semibold text-stone-500 mr-1">
-                      MOTEUR :
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateConfig({ bgRemoveMode: 'color-key', outputFormat: 'image/png' })
-                      }
-                      className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition ${
-                        config.bgRemoveMode === 'color-key'
-                          ? 'bg-stone-900 text-white border-stone-900'
-                          : 'bg-[#FAF8F5] text-stone-700 border-stone-200 hover:bg-stone-100'
-                      }`}
-                    >
-                      <Wand2 className="w-3.5 h-3.5" />
-                      Baguette Magique / Couleur (Instantané)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateConfig({ bgRemoveMode: 'ai', outputFormat: 'image/png' })
-                      }
-                      className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition ${
-                        config.bgRemoveMode === 'ai'
-                          ? 'bg-stone-900 text-white border-stone-900'
-                          : 'bg-[#FAF8F5] text-stone-700 border-stone-200 hover:bg-stone-100'
-                      }`}
-                    >
-                      <Cpu className="w-3.5 h-3.5" />
-                      Détourage IA Sujet 100% Local (RMBG-1.4)
-                    </button>
-                  </div>
-
-                  {config.bgRemoveMode === 'color-key' ? (
-                    <div className="flex flex-wrap items-center gap-4 pt-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-stone-600">Couleur à retirer :</span>
-                        <input
-                          type="color"
-                          value={config.colorKeyHex}
-                          onChange={(e) => updateConfig({ colorKeyHex: e.target.value })}
-                          className="w-8 h-7 rounded cursor-pointer border border-stone-300 bg-white"
-                        />
-                        <span className="font-mono text-xs text-stone-700 uppercase">
-                          {config.colorKeyHex}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-stone-600">Tolérance :</span>
-                        <input
-                          type="range"
-                          min={2}
-                          max={70}
-                          value={config.colorTolerance}
-                          onChange={(e) => updateConfig({ colorTolerance: Number(e.target.value) })}
-                          className="w-28 accent-stone-900"
-                        />
-                        <span className="font-mono text-xs font-bold text-purple-700">
-                          {config.colorTolerance}%
-                        </span>
-                      </div>
-
-                      <label className="flex items-center gap-1.5 text-xs text-stone-700 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={config.contiguousFloodFill}
-                          onChange={(e) =>
-                            updateConfig({ contiguousFloodFill: e.target.checked })
-                          }
-                          className="rounded accent-stone-900"
-                        />
-                        <span>Bords contigus uniquement</span>
-                      </label>
-
-                      {items.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setInspectedId(items[0].id)}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-purple-700 hover:underline"
-                        >
-                          <Pipette className="w-3.5 h-3.5" /> Pipette sur l'image
-                        </button>
-                      )}
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-semibold text-stone-500">
+                        COULEUR :
+                      </span>
+                      <input
+                        type="color"
+                        value={config.colorKeyHex}
+                        onChange={(e) => updateConfig({ colorKeyHex: e.target.value })}
+                        className="w-8 h-7 rounded cursor-pointer border border-stone-300 bg-white"
+                      />
+                      <span className="font-mono text-xs text-stone-700 uppercase">
+                        {config.colorKeyHex}
+                      </span>
                     </div>
-                  ) : (
-                    <p className="text-xs text-stone-500">
-                      Le modèle neuronal segmente automatiquement le sujet principal dans votre navigateur.
-                    </p>
-                  )}
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-stone-600">Tolérance :</span>
+                      <input
+                        type="range"
+                        min={2}
+                        max={70}
+                        value={config.colorTolerance}
+                        onChange={(e) => updateConfig({ colorTolerance: Number(e.target.value) })}
+                        className="w-28 accent-stone-900"
+                      />
+                      <span className="font-mono text-xs font-bold text-stone-900">
+                        {config.colorTolerance}%
+                      </span>
+                    </div>
+
+                    <label className="flex items-center gap-1.5 text-xs text-stone-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={config.contiguousFloodFill}
+                        onChange={(e) =>
+                          updateConfig({ contiguousFloodFill: e.target.checked })
+                        }
+                        className="rounded accent-stone-900"
+                      />
+                      <span>Bords contigus uniquement</span>
+                    </label>
+
+                    {items.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setInspectedId(items[0].id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-900 text-white hover:bg-stone-800 transition"
+                      >
+                        <Pipette className="w-3.5 h-3.5" /> Pipette sur l'image
+                      </button>
+                    )}
+                  </div>
 
                   {/* Quick Background Color Replacement */}
                   <div className="pt-2.5 border-t border-stone-200/80 flex flex-wrap items-center gap-2">

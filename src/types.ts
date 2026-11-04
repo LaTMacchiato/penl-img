@@ -12,7 +12,7 @@ export type CompressionMode = 'quality' | 'target-size';
 
 export type CropPreset = 'none' | '1:1' | '16:9' | '4:3' | '3:2' | '9:16' | 'custom';
 
-export type BgRemoveMode = 'none' | 'color-key' | 'ai';
+export type BgRemoveMode = 'none' | 'color-key';
 
 export interface CustomCropBox {
   x: number; // 0..1 normalized

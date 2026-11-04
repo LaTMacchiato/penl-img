@@ -1,39 +1,6 @@
 import { ImageItem, PipelineConfig } from '../types';
 import { finalizeJpegBlob, enforce72DpiOnPngBlob } from './exifAndDpi';
 
-// Lazy singleton for Transformers.js RMBG-1.4 model
-let aiModelPromise: Promise<{ model: any; processor: any; RawImage: any }> | null = null;
-
-export async function getLocalAiBgRemover(onProgress?: (status: string) => void) {
-  if (!aiModelPromise) {
-    aiModelPromise = (async () => {
-      onProgress?.('Chargement du moteur IA local (RMBG-1.4)...');
-      const { AutoModel, AutoProcessor, RawImage, env } = await import('@huggingface/transformers');
-      env.allowLocalModels = false;
-      const modelId = 'briaai/RMBG-1.4';
-      const model = await AutoModel.from_pretrained(modelId, {
-        config: { model_type: 'custom' } as any,
-      });
-      const processor = await AutoProcessor.from_pretrained(modelId, {
-        config: {
-          do_normalize: true,
-          do_pad: false,
-          do_rescale: true,
-          do_resize: true,
-          image_mean: [0.5, 0.5, 0.5],
-          feature_extractor_type: 'ImageFeatureExtractor',
-          image_std: [1, 1, 1],
-          resample: 2,
-          rescale_factor: 0.00392156862745098,
-          size: { width: 1024, height: 1024 },
-        } as any,
-      });
-      return { model, processor, RawImage };
-    })();
-  }
-  return aiModelPromise;
-}
-
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const clean = hex.replace('#', '');
   const num = parseInt(clean.length === 3 ? clean.split('').map((c) => c + c).join('') : clean, 16);
@@ -124,103 +91,7 @@ export function applyColorKeyRemoval(
   ctx.putImageData(imgData, 0, 0);
 }
 
-export async function applyAiBgRemovalToCanvas(
-  canvas: HTMLCanvasElement,
-  onProgress?: (status: string) => void
-): Promise<void> {
-  const { model, processor, RawImage } = await getLocalAiBgRemover(onProgress);
-  onProgress?.('Détourage IA en cours...');
 
-  const dataUrl = canvas.toDataURL('image/png');
-  const image = await RawImage.fromURL(dataUrl);
-  const { pixel_values } = await processor(image);
-  const { output } = await model({ input: pixel_values });
-
-  const maskImage = await RawImage.fromTensor(output[0].mul(255).to('uint8')).resize(
-    canvas.width,
-    canvas.height
-  );
-
-  const ctx = canvas.getContext('2d')!;
-  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const pixelData = imgData.data;
-  const maskData = maskImage.data;
-
-  // Post-processing & cleanup:
-  // 1. Black/White point stretching to eliminate semi-transparent noise dots in background
-  // 2. Solid interior fill: prevent speckles and noise holes inside high-density subjects
-  const BLACK_POINT = 24;  // Anything below this is forced to transparent (eliminates background ghosting)
-  const WHITE_POINT = 230; // Anything above this is fully opaque (solid clothing & skin)
-
-  const processedMask = new Uint8Array(maskData.length);
-  for (let i = 0; i < maskData.length; i++) {
-    const rawVal = maskData[i];
-    if (rawVal <= BLACK_POINT) {
-      processedMask[i] = 0;
-    } else if (rawVal >= WHITE_POINT) {
-      processedMask[i] = 255;
-    } else {
-      // Linear stretch for natural smooth edge transition
-      processedMask[i] = Math.round(((rawVal - BLACK_POINT) / (WHITE_POINT - BLACK_POINT)) * 255);
-    }
-  }
-
-  // 2. High-performance noise & speckle removal via Integral Image (Summed-Area Table)
-  // Eliminates white dropouts on knitwear/skin and eliminates isolated floating background halos.
-  const w = canvas.width;
-  const h = canvas.height;
-  const satStride = w + 1;
-  const sat = new Float64Array(satStride * (h + 1));
-
-  for (let y = 0; y < h; y++) {
-    let rowSum = 0;
-    const rowOffset = y * w;
-    const satRowOffset = (y + 1) * satStride;
-    const satPrevRowOffset = y * satStride;
-    for (let x = 0; x < w; x++) {
-      rowSum += processedMask[rowOffset + x];
-      sat[satRowOffset + (x + 1)] = sat[satPrevRowOffset + (x + 1)] + rowSum;
-    }
-  }
-
-  const radius = Math.max(4, Math.min(10, Math.round(Math.min(w, h) / 160)));
-
-  for (let y = 0; y < h; y++) {
-    const y0 = Math.max(0, y - radius);
-    const y1 = Math.min(h - 1, y + radius);
-    const rowOffset = y * w;
-    const y1Offset = (y1 + 1) * satStride;
-    const y0Offset = y0 * satStride;
-
-    for (let x = 0; x < w; x++) {
-      const idx = rowOffset + x;
-      const val = processedMask[idx];
-
-      if (val < 220 || val > 0) {
-        const x0 = Math.max(0, x - radius);
-        const x1 = Math.min(w - 1, x + radius);
-        const area = (x1 - x0 + 1) * (y1 - y0 + 1);
-        const sum = sat[y1Offset + (x1 + 1)] - sat[y0Offset + (x1 + 1)] - sat[y1Offset + x0] + sat[y0Offset + x0];
-        const avg = sum / area;
-
-        // If surrounded by solid subject (sweater, body, skin), fill internal texture dropouts
-        if (val < 200 && avg > 175) {
-          processedMask[idx] = 255;
-        }
-        // If surrounded by transparent background, eliminate residual ghost noise / halos
-        else if (val > 0 && avg < 30) {
-          processedMask[idx] = 0;
-        }
-      }
-    }
-  }
-
-  // Apply cleaned mask to canvas alpha
-  for (let i = 0; i < processedMask.length; i++) {
-    pixelData[i * 4 + 3] = processedMask[i];
-  }
-  ctx.putImageData(imgData, 0, 0);
-}
 
 export function resolveOutputMime(item: ImageItem, config: PipelineConfig): string {
   if (config.outputFormat === 'original') {
@@ -567,8 +438,6 @@ export async function processSingleImage(
       config.contiguousFloodFill,
       config.featherEdge
     );
-  } else if (config.bgRemoveMode === 'ai') {
-    await applyAiBgRemovalToCanvas(canvas, onStatus);
   }
 
   // Apply Background Color Replacement if specified and not transparent
