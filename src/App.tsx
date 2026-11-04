@@ -157,7 +157,7 @@ const VEOL_TOOLS: ToolCardDef[] = [
     id: 'veol-article',
     badge: 'VEOL • MAX 1280 PX • 72 PPP',
     title: 'Image article VEOL',
-    subtitle: 'Largeur max 1280 px (conserve si moins), sans crop, 72 ppp auto et traitement par lot.',
+    subtitle: 'Largeur max 1280 px, cadrage optionnel, 72 ppp auto et traitement par lot.',
     accentBg: 'bg-emerald-500/10',
     accentText: 'text-emerald-700',
     accentBorder: 'group-hover:border-emerald-500/60',
