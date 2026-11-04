@@ -52,6 +52,8 @@ import {
   FileImage,
   Sliders,
   Laptop,
+  QrCode,
+  ExternalLink,
 } from 'lucide-react';
 
 export type ToolId =
@@ -77,6 +79,8 @@ interface ToolCardDef {
   featured?: boolean;
   compact?: boolean;
   fullWidth?: boolean;
+  twoColumns?: boolean;
+  externalUrl?: string;
 }
 
 const MAIN_TOOLS: ToolCardDef[] = [
@@ -141,7 +145,18 @@ const MAIN_TOOLS: ToolCardDef[] = [
     accentText: 'text-cyan-600',
     accentBorder: 'group-hover:border-cyan-500/50',
     icon: <Laptop className="w-5 h-5" />,
-    fullWidth: true,
+    twoColumns: true,
+  },
+  {
+    id: 'qrcode',
+    badge: 'OUTIL COMPAGNON',
+    title: 'Générateur de QR Code',
+    subtitle: 'Créez et personnalisez des QR codes vectoriels haute définition directement sur qrcode.thmarchand.fr.',
+    accentBg: 'bg-emerald-500/10',
+    accentText: 'text-emerald-600',
+    accentBorder: 'group-hover:border-emerald-500/50',
+    icon: <QrCode className="w-5 h-5" />,
+    externalUrl: 'https://qrcode.thmarchand.fr/',
   },
 ];
 
@@ -888,47 +903,71 @@ export function App() {
                 <div className="h-px flex-1 bg-stone-200" />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {MAIN_TOOLS.map((tool) => (
-                  <button
-                    key={tool.id}
-                    type="button"
-                    onClick={() => selectTool(tool.id)}
-                    className={`group text-left bg-white rounded-2xl p-6 border border-stone-200/90 ${
-                      tool.accentBorder
-                    } shadow-tactile hover:shadow-tactile-lg hover:-translate-y-0.5 transition-all flex flex-col justify-between min-h-[185px] ${
-                      tool.fullWidth
-                        ? 'col-span-1 sm:col-span-2 lg:col-span-3 bg-gradient-to-r from-white via-cyan-50/20 to-white'
-                        : tool.featured
-                        ? 'sm:col-span-2 lg:col-span-2 bg-gradient-to-br from-white to-orange-50/40'
-                        : ''
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-4">
-                        <span className="font-mono text-[11px] font-semibold tracking-wider text-stone-400">
-                          {tool.badge}
-                        </span>
-                        <div
-                          className={`w-10 h-10 rounded-xl ${tool.accentBg} ${tool.accentText} flex items-center justify-center transition-transform group-hover:scale-110`}
-                        >
-                          {tool.icon}
+                {MAIN_TOOLS.map((tool) => {
+                  const CardComponent = tool.externalUrl ? 'a' : 'button';
+                  const cardProps = tool.externalUrl
+                    ? {
+                        href: tool.externalUrl,
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                      }
+                    : {
+                        type: 'button' as const,
+                        onClick: () => selectTool(tool.id),
+                      };
+
+                  return (
+                    <CardComponent
+                      key={tool.id}
+                      {...cardProps}
+                      className={`group text-left bg-white rounded-2xl p-6 border border-stone-200/90 ${
+                        tool.accentBorder
+                      } shadow-tactile hover:shadow-tactile-lg hover:-translate-y-0.5 transition-all flex flex-col justify-between min-h-[185px] cursor-pointer ${
+                        tool.twoColumns
+                          ? 'col-span-1 sm:col-span-2 lg:col-span-2 bg-gradient-to-r from-white via-cyan-50/20 to-white'
+                          : tool.fullWidth
+                          ? 'col-span-1 sm:col-span-2 lg:col-span-3 bg-gradient-to-r from-white via-cyan-50/20 to-white'
+                          : tool.featured
+                          ? 'sm:col-span-2 lg:col-span-2 bg-gradient-to-br from-white to-orange-50/40'
+                          : tool.externalUrl
+                          ? 'col-span-1 sm:col-span-2 lg:col-span-1 bg-gradient-to-br from-white to-emerald-50/20'
+                          : ''
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-4">
+                          <span className="font-mono text-[11px] font-semibold tracking-wider text-stone-400">
+                            {tool.badge}
+                          </span>
+                          <div
+                            className={`w-10 h-10 rounded-xl ${tool.accentBg} ${tool.accentText} flex items-center justify-center transition-transform group-hover:scale-110`}
+                          >
+                            {tool.icon}
+                          </div>
                         </div>
+
+                        <h2 className="font-display text-xl sm:text-2xl font-bold text-stone-900 group-hover:text-orange-600 transition-colors flex items-center gap-2">
+                          <span>{tool.title}</span>
+                          {tool.externalUrl && (
+                            <ExternalLink className="w-4 h-4 text-stone-400 group-hover:text-emerald-600 transition-colors shrink-0" />
+                          )}
+                        </h2>
+                        <p className="text-xs sm:text-sm text-stone-500 mt-1.5 leading-relaxed max-w-xl">
+                          {tool.subtitle}
+                        </p>
                       </div>
 
-                      <h2 className="font-display text-xl sm:text-2xl font-bold text-stone-900 group-hover:text-orange-600 transition-colors">
-                        {tool.title}
-                      </h2>
-                      <p className="text-xs sm:text-sm text-stone-500 mt-1.5 leading-relaxed max-w-xl">
-                        {tool.subtitle}
-                      </p>
-                    </div>
-
-                    <div className="mt-5 pt-3 border-t border-stone-100 flex items-center justify-between text-xs font-semibold text-stone-800">
-                      <span>Ouvrir l'outil</span>
-                      <ArrowRight className="w-4 h-4 text-stone-400 group-hover:text-orange-600 group-hover:translate-x-1 transition-all" />
-                    </div>
-                  </button>
-                ))}
+                      <div className="mt-5 pt-3 border-t border-stone-100 flex items-center justify-between text-xs font-semibold text-stone-800">
+                        <span>{tool.externalUrl ? 'Accéder au générateur' : "Ouvrir l'outil"}</span>
+                        {tool.externalUrl ? (
+                          <ExternalLink className="w-4 h-4 text-stone-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+                        ) : (
+                          <ArrowRight className="w-4 h-4 text-stone-400 group-hover:text-orange-600 group-hover:translate-x-1 transition-all" />
+                        )}
+                      </div>
+                    </CardComponent>
+                  );
+                })}
               </div>
             </div>
           </div>
