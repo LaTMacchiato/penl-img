@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { ImageItem, CustomCropBox } from '../types';
 import { Move, ZoomIn, ZoomOut, Eye, RotateCcw } from 'lucide-react';
 
@@ -34,6 +34,29 @@ export const VeolCropViewport: React.FC<VeolCropViewportProps> = ({
 }) => {
   const imgContainerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const [dragMode, setDragMode] = useState<'none' | 'pan' | CornerHandle>('none');
+
+  const sw = Math.max(1, item.originalWidth);
+  const sh = Math.max(1, item.originalHeight);
+  const currentRatio = sw / sh;
+
+  // Determine if we are in freeform custom box mode or aspect-ratio locked pan/zoom mode
+  const lockedRatio: number | null =
+    aspectRatio !== undefined
+      ? aspectRatio
+      : targetWidth && targetHeight
+      ? targetWidth / targetHeight
+      : null;
+
+  const isFreeform = lockedRatio === null;
+
+  // For freeform mode, use item.customCrop or default full box
+  const freeBox: CustomCropBox = item.customCrop || { x: 0, y: 0, width: 1, height: 1 };
+
+  // For locked ratio mode, compute box from panX, panY, zoom
+  const zoom = Math.max(1, item.zoom || 1);
+  const panX = item.panX !== undefined ? item.panX : 0.5;
+  const panY = item.panY !== undefined ? item.panY : 0.5;
 
   // Keep refs up to date for non-passive native wheel listener
   const zoomRef = useRef(zoom);
@@ -86,29 +109,6 @@ export const VeolCropViewport: React.FC<VeolCropViewportProps> = ({
       el.removeEventListener('wheel', onWheel);
     };
   }, []);
-  const [dragMode, setDragMode] = useState<'none' | 'pan' | CornerHandle>('none');
-
-  const sw = Math.max(1, item.originalWidth);
-  const sh = Math.max(1, item.originalHeight);
-  const currentRatio = sw / sh;
-
-  // Determine if we are in freeform custom box mode or aspect-ratio locked pan/zoom mode
-  const lockedRatio: number | null =
-    aspectRatio !== undefined
-      ? aspectRatio
-      : targetWidth && targetHeight
-      ? targetWidth / targetHeight
-      : null;
-
-  const isFreeform = lockedRatio === null;
-
-  // For freeform mode, use item.customCrop or default full box
-  const freeBox: CustomCropBox = item.customCrop || { x: 0, y: 0, width: 1, height: 1 };
-
-  // For locked ratio mode, compute box from panX, panY, zoom
-  const zoom = Math.max(1, item.zoom || 1);
-  const panX = item.panX !== undefined ? item.panX : 0.5;
-  const panY = item.panY !== undefined ? item.panY : 0.5;
 
   let baseCropW = sw;
   let baseCropH = sh;
