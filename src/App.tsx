@@ -8,7 +8,7 @@ import {
   CropPreset,
   CustomCropBox,
 } from './types';
-import { extractFilesFromDataTransfer, formatBytes, isImageFile } from './utils/fileExtractor';
+import { extractFilesFromDataTransfer, formatBytes, isImageFile, isHeicFile } from './utils/fileExtractor';
 import { processSingleImage } from './utils/imageProcessor';
 import { InspectorModal } from './components/InspectorModal';
 import { VeolCropViewport } from './components/VeolCropViewport';
@@ -372,16 +372,35 @@ export function App() {
 
       const newItems: ImageItem[] = await Promise.all(
         extracted.map(async ({ file, relativePath }) => {
-          const url = URL.createObjectURL(file);
+          let actualFile = file;
+
+          // Convert HEIC/HEIF files locally to JPEG on the fly
+          if (isHeicFile(file)) {
+            try {
+              const heic2any = (await import('heic2any')).default;
+              const convertedBlob = await heic2any({
+                blob: file,
+                toType: 'image/jpeg',
+                quality: 0.95,
+              });
+              const singleBlob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+              const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
+              actualFile = new File([singleBlob], newName, { type: 'image/jpeg' });
+            } catch (err) {
+              console.warn('Erreur conversion HEIC locale :', err);
+            }
+          }
+
+          const url = URL.createObjectURL(actualFile);
           const dims = await getImageDimensions(url);
           return {
-            id: `${file.name}-${file.size}-${Math.random().toString(36).slice(2, 9)}`,
-            file,
-            relativePath: relativePath || file.name,
+            id: `${actualFile.name}-${actualFile.size}-${Math.random().toString(36).slice(2, 9)}`,
+            file: actualFile,
+            relativePath: relativePath ? relativePath.replace(/\.(heic|heif)$/i, '.jpg') : actualFile.name,
             originalUrl: url,
             originalWidth: dims.width,
             originalHeight: dims.height,
-            originalSize: file.size,
+            originalSize: actualFile.size,
             panX: 0.5,
             panY: 0.5,
             zoom: 1,
@@ -689,7 +708,7 @@ export function App() {
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*"
+        accept="image/*,.heic,.heif,image/heic,image/heif"
         onChange={handleFileInputChange}
         className="hidden"
       />

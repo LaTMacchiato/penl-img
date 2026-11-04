@@ -4,11 +4,20 @@ export interface ExtractedFile {
   relativePath: string;
 }
 
-const IMAGE_EXTENSIONS = /\.(jpe?g|png|webp|avif|gif|bmp|svg|tiff?)$/i;
+const IMAGE_EXTENSIONS = /\.(jpe?g|png|webp|avif|gif|bmp|svg|tiff?|heic|heif)$/i;
 
 export function isImageFile(file: File): boolean {
   if (file.type.startsWith('image/')) return true;
+  if (file.type === 'image/heic' || file.type === 'image/heif') return true;
   return IMAGE_EXTENSIONS.test(file.name);
+}
+
+export function isHeicFile(file: File): boolean {
+  return (
+    file.type === 'image/heic' ||
+    file.type === 'image/heif' ||
+    /\.(heic|heif)$/i.test(file.name)
+  );
 }
 
 export async function extractFilesFromDataTransfer(items: DataTransferItemList): Promise<ExtractedFile[]> {
