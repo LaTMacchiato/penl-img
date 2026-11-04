@@ -12,6 +12,7 @@ import { extractFilesFromDataTransfer, formatBytes, isImageFile } from './utils/
 import { processSingleImage } from './utils/imageProcessor';
 import { InspectorModal } from './components/InspectorModal';
 import { VeolCropViewport } from './components/VeolCropViewport';
+import { LegalModal } from './components/LegalModal';
 import JSZip from 'jszip';
 import {
   Maximize2,
@@ -291,6 +292,7 @@ export function App() {
   });
   const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
 
   // State for direct Pan & Zoom dragging on VEOL cards
   const [panDragState, setPanDragState] = useState<{
@@ -702,21 +704,21 @@ export function App() {
 
       {/* Top Navigation Bar */}
       <header className="sticky top-0 z-20 border-b border-stone-200/90 bg-[#FAF8F5]/90 backdrop-blur-md">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 shrink-0">
             <button
               type="button"
               onClick={() => selectTool(null)}
-              className="flex items-center gap-2.5 group text-left"
+              className="flex items-center gap-2.5 group text-left shrink-0 whitespace-nowrap"
             >
-              <div className="w-8 h-8 rounded-lg bg-stone-900 text-white flex items-center justify-center font-mono font-bold text-sm shadow-tactile group-hover:bg-orange-600 transition-colors">
+              <div className="w-8 h-8 rounded-lg bg-stone-900 text-white flex items-center justify-center font-mono font-bold text-sm shadow-tactile group-hover:bg-orange-600 transition-colors shrink-0">
                 P.
               </div>
-              <div>
-                <span className="font-display font-extrabold tracking-tight text-base text-stone-900">
+              <div className="flex items-baseline whitespace-nowrap shrink-0">
+                <span className="font-display font-extrabold tracking-tight text-base text-stone-900 whitespace-nowrap">
                   Penl.img
                 </span>
-                <span className="hidden sm:inline-block ml-2 font-mono text-[11px] text-stone-500">
+                <span className="hidden sm:inline-block ml-1.5 font-mono text-[11px] text-stone-500 whitespace-nowrap">
                   local
                 </span>
               </div>
@@ -750,16 +752,21 @@ export function App() {
             )}
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
             {items.length > 0 && !selectedTool && (
-              <span className="font-mono text-xs px-2.5 py-1 rounded-full bg-orange-100 text-orange-800 border border-orange-200 font-medium">
+              <span className="font-mono text-xs px-2.5 py-1 rounded-full bg-orange-100 text-orange-800 border border-orange-200 font-medium whitespace-nowrap">
                 {items.length} fichier{items.length > 1 ? 's' : ''} chargé{items.length > 1 ? 's' : ''}
               </span>
             )}
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-600/20 text-emerald-800 font-mono text-[11px] font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <button
+              type="button"
+              onClick={() => setIsLegalModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-600/20 text-emerald-800 font-mono text-[11px] font-medium transition whitespace-nowrap cursor-pointer"
+              title="Architecture 100% Locale • Voir les mentions légales & confidentialité"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               100% LOCAL • ZERO UPLOAD
-            </div>
+            </button>
           </div>
         </div>
       </header>
@@ -878,7 +885,17 @@ export function App() {
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
               <span>Penl.img • Exécution 100% navigateur • EXIF préservés par défaut • Dossiers complets</span>
             </div>
-            <div>JPG • PNG • WEBP • AVIF</div>
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => setIsLegalModalOpen(true)}
+                className="hover:text-stone-900 underline underline-offset-2 transition cursor-pointer"
+              >
+                Mentions légales & Confidentialité (100% Local)
+              </button>
+              <span className="text-stone-300">•</span>
+              <div>JPG • PNG • WEBP • AVIF</div>
+            </div>
           </footer>
         </main>
       ) : (
@@ -2168,6 +2185,12 @@ export function App() {
         onProcessSingle={(it) => handleProcessSingle(it)}
         onCopyClipboard={handleCopyClipboard}
         copiedId={copiedId}
+      />
+
+      {/* Legal & Privacy Modal (100% Local / GDPR / LCEN) */}
+      <LegalModal
+        isOpen={isLegalModalOpen}
+        onClose={() => setIsLegalModalOpen(false)}
       />
     </div>
   );
