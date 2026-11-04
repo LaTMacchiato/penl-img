@@ -146,8 +146,51 @@ export async function applyAiBgRemovalToCanvas(
   const pixelData = imgData.data;
   const maskData = maskImage.data;
 
+  // Post-processing & cleanup:
+  // 1. Black/White point stretching to eliminate semi-transparent noise dots in background
+  // 2. Solid interior fill: prevent speckles and noise holes inside high-density subjects
+  const BLACK_POINT = 24;  // Anything below this is forced to transparent (eliminates background ghosting)
+  const WHITE_POINT = 230; // Anything above this is fully opaque (solid clothing & skin)
+
+  const processedMask = new Uint8Array(maskData.length);
   for (let i = 0; i < maskData.length; i++) {
-    pixelData[i * 4 + 3] = maskData[i];
+    const rawVal = maskData[i];
+    if (rawVal <= BLACK_POINT) {
+      processedMask[i] = 0;
+    } else if (rawVal >= WHITE_POINT) {
+      processedMask[i] = 255;
+    } else {
+      // Linear stretch for natural smooth edge transition
+      processedMask[i] = Math.round(((rawVal - BLACK_POINT) / (WHITE_POINT - BLACK_POINT)) * 255);
+    }
+  }
+
+  // Morphological opening/closing on alpha to remove isolated stray pixels (speckles on t-shirts/skin)
+  const w = canvas.width;
+  const h = canvas.height;
+
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const idx = y * w + x;
+      // If surrounding neighbors are mostly solid foreground (alpha > 200), fill internal dropouts
+      if (processedMask[idx] < 200) {
+        let solidCount = 0;
+        if (processedMask[idx - 1] > 200) solidCount++;
+        if (processedMask[idx + 1] > 200) solidCount++;
+        if (processedMask[idx - w] > 200) solidCount++;
+        if (processedMask[idx + w] > 200) solidCount++;
+
+        // If at least 3 of 4 cardinal neighbors are solid foreground, this was an internal artifact/speckle hole
+        if (solidCount >= 3) {
+          processedMask[idx] = 255;
+        }
+      }
+    }
+  }
+
+  // Apply cleaned mask to canvas alpha
+  for (let i = 0; i < processedMask.length; i++) {
+    pixelData[i * 4 + 3] = processedMask[i];
   }
   ctx.putImageData(imgData, 0, 0);
 }

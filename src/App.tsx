@@ -13,6 +13,7 @@ import { processSingleImage } from './utils/imageProcessor';
 import { InspectorModal } from './components/InspectorModal';
 import { VeolCropViewport } from './components/VeolCropViewport';
 import { LegalModal } from './components/LegalModal';
+import { MockupStudio } from './components/MockupStudio';
 import JSZip from 'jszip';
 import {
   Maximize2,
@@ -50,6 +51,7 @@ import {
   RectangleHorizontal,
   FileImage,
   Sliders,
+  Laptop,
 } from 'lucide-react';
 
 export type ToolId =
@@ -58,6 +60,7 @@ export type ToolId =
   | 'remove-bg'
   | 'crop'
   | 'rename'
+  | 'mockup'
   | 'veol-thumb'
   | 'veol-banner'
   | 'veol-article';
@@ -127,6 +130,16 @@ const MAIN_TOOLS: ToolCardDef[] = [
     accentText: 'text-rose-600',
     accentBorder: 'group-hover:border-rose-500/50',
     icon: <FolderPen className="w-5 h-5" />,
+  },
+  {
+    id: 'mockup',
+    badge: '06 / CONTEXTUALISATION',
+    title: 'Mockup Ordinateur & Smartphone',
+    subtitle: 'Intégrez vos captures d’écran dans un faux ordinateur portable ou smartphone avec fond élégant.',
+    accentBg: 'bg-cyan-500/10',
+    accentText: 'text-cyan-600',
+    accentBorder: 'group-hover:border-cyan-500/50',
+    icon: <Laptop className="w-5 h-5" />,
   },
 ];
 
@@ -276,6 +289,11 @@ function getDefaultConfigForTool(tool: ToolId): PipelineConfig {
         renamePattern: 'sequential',
         customBaseName: 'image',
         quality: 92,
+      };
+    case 'mockup':
+      return {
+        ...base,
+        outputFormat: 'image/png',
       };
   }
 }
@@ -774,6 +792,8 @@ export function App() {
                       ? 'Bannière VEOL'
                       : t.id === 'veol-article'
                       ? 'Article VEOL'
+                      : t.id === 'mockup'
+                      ? 'Mockups'
                       : t.title.split(' ')[0]}
                   </button>
                 ))}
@@ -2045,6 +2065,19 @@ export function App() {
                 />
               </div>
             )}
+
+            {/* 6. MOCKUP STUDIO CONTROLS INFO */}
+            {selectedTool === 'mockup' && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-stone-600">
+                <div className="flex items-center gap-2">
+                  <Laptop className="w-4 h-4 text-orange-600" />
+                  <span>
+                    Glissez vos captures d’écran ci-dessous pour les habiller en faux ordinateur ou smartphone.
+                  </span>
+                </div>
+                <span className="font-mono text-[11px] text-stone-400">Export HD 2400×1600 px • PNG</span>
+              </div>
+            )}
           </section>
 
           {/* EXPORT BAR WHEN DONE (For multi-image batch tools) */}
@@ -2079,7 +2112,9 @@ export function App() {
           )}
 
           {/* EMPTY STATE DROPZONE OR FILES GRID */}
-          {items.length === 0 ? (
+          {selectedTool === 'mockup' && items.length > 0 ? (
+            <MockupStudio items={items} />
+          ) : items.length === 0 ? (
             <div
               onClick={() => fileInputRef.current?.click()}
               className={`cursor-pointer rounded-3xl border-2 border-dashed p-14 text-center transition-all flex flex-col items-center justify-center min-h-[300px] ${
