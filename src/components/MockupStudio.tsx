@@ -67,51 +67,55 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
     });
 
     if (device === 'laptop') {
-      // Laptop Screen Coordinates on 2400x1600 canvas
-      const lx = 400;
-      const ly = 240;
-      const lw = 1600;
-      const lh = 1000;
+      // Laptop Screen Coordinates on 2400x1600 canvas (True 16:10 ratio matching preview)
+      const lw = 1500;
+      const lh = 937.5; // exact 16:10
+      const lx = (2400 - lw) / 2;
+      const ly = (1600 - lh) / 2 - 20;
 
       // Soft Shadow under laptop
       if (showShadow) {
         ctx.save();
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.22)';
-        ctx.shadowBlur = 60;
-        ctx.shadowOffsetY = 40;
-        ctx.fillStyle = '#0a0a0a';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+        ctx.shadowBlur = 65;
+        ctx.shadowOffsetY = 30;
+        ctx.fillStyle = '#000000';
         ctx.beginPath();
-        ctx.roundRect(lx, ly, lw, lh, 28);
+        ctx.roundRect(lx, ly, lw, lh + 30, 20);
         ctx.fill();
         ctx.restore();
       }
 
-      // Laptop Bezel
+      // 1. Laptop Display Lid (Dark slate border)
       ctx.fillStyle = '#1c1917';
       ctx.beginPath();
-      ctx.roundRect(lx, ly, lw, lh, 24);
+      ctx.roundRect(lx, ly, lw, lh, [20, 20, 4, 4]);
       ctx.fill();
 
       // Top WebCam dot
-      ctx.fillStyle = '#383838';
+      ctx.fillStyle = '#44403c';
       ctx.beginPath();
-      ctx.arc(lx + lw / 2, ly + 20, 5, 0, Math.PI * 2);
+      ctx.arc(lx + lw / 2, ly + 14, 4, 0, Math.PI * 2);
       ctx.fill();
 
-      // Screen Inner (Bezel padding: 40px left/right, 40px top, 40px bottom)
-      const sx = lx + 40;
-      const sy = ly + 40;
-      const sw = lw - 80;
-      const sh = lh - 80;
+      // 2. Screen Inner Display Area (Thin realistic bezel: 28px left/right, 28px top, 28px bottom)
+      const bezel = 28;
+      const sx = lx + bezel;
+      const sy = ly + bezel;
+      const sw = lw - bezel * 2;
+      const sh = lh - bezel * 2;
 
       ctx.save();
       ctx.beginPath();
-      ctx.roundRect(sx, sy, sw, sh, 8);
+      ctx.roundRect(sx, sy, sw, sh, 6);
       ctx.clip();
 
-      // Draw image inside screen (fit width or cover)
+      // Background inside screen before image loads
+      ctx.fillStyle = '#0c0a09';
+      ctx.fillRect(sx, sy, sw, sh);
+
+      // Draw image inside screen (fit width)
       const imgAspect = img.naturalWidth / img.naturalHeight;
-      const screenAspect = sw / sh;
       let drawW = sw;
       let drawH = sw / imgAspect;
 
@@ -121,21 +125,37 @@ export const MockupStudio: React.FC<MockupStudioProps> = ({ items }) => {
       }
 
       const drawX = sx + (sw - drawW) / 2;
-      const drawY = sy + (sh - drawH) * (panY / 100);
+      const drawY = sy - (drawH - sh) * (panY / 100);
 
       ctx.drawImage(img, drawX, drawY, drawW, drawH);
       ctx.restore();
 
-      // Laptop Base & Hinge
-      ctx.fillStyle = '#d4d4d8';
+      // 3. Laptop Base (Slightly wider than lid, premium aluminum finish)
+      const baseW = lw * 1.14;
+      const baseX = (2400 - baseW) / 2;
+      const baseY = ly + lh;
+      const baseH = 26;
+
+      // Base shadow / bottom lip
+      ctx.fillStyle = '#71717a';
       ctx.beginPath();
-      ctx.roundRect(lx - 120, ly + lh - 4, lw + 240, 36, 18);
+      ctx.roundRect(baseX - 4, baseY + 6, baseW + 8, baseH, [0, 0, 16, 16]);
       ctx.fill();
 
-      // Notch indentation on base
-      ctx.fillStyle = '#a1a1aa';
+      // Base top gradient
+      const baseGrad = ctx.createLinearGradient(baseX, baseY, baseX, baseY + baseH);
+      baseGrad.addColorStop(0, '#e4e4e7');
+      baseGrad.addColorStop(0.5, '#d4d4d8');
+      baseGrad.addColorStop(1, '#a1a1aa');
+      ctx.fillStyle = baseGrad;
       ctx.beginPath();
-      ctx.roundRect(lx + lw / 2 - 90, ly + lh - 4, 180, 10, [0, 0, 8, 8]);
+      ctx.roundRect(baseX, baseY, baseW, baseH, [4, 4, 16, 16]);
+      ctx.fill();
+
+      // Center thumb notch on base
+      ctx.fillStyle = '#71717a';
+      ctx.beginPath();
+      ctx.roundRect(2400 / 2 - 80, baseY, 160, 8, [0, 0, 6, 6]);
       ctx.fill();
 
     } else {

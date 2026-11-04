@@ -76,6 +76,7 @@ interface ToolCardDef {
   icon: React.ReactNode;
   featured?: boolean;
   compact?: boolean;
+  fullWidth?: boolean;
 }
 
 const MAIN_TOOLS: ToolCardDef[] = [
@@ -140,6 +141,7 @@ const MAIN_TOOLS: ToolCardDef[] = [
     accentText: 'text-cyan-600',
     accentBorder: 'group-hover:border-cyan-500/50',
     icon: <Laptop className="w-5 h-5" />,
+    fullWidth: true,
   },
 ];
 
@@ -894,7 +896,9 @@ export function App() {
                     className={`group text-left bg-white rounded-2xl p-6 border border-stone-200/90 ${
                       tool.accentBorder
                     } shadow-tactile hover:shadow-tactile-lg hover:-translate-y-0.5 transition-all flex flex-col justify-between min-h-[185px] ${
-                      tool.featured
+                      tool.fullWidth
+                        ? 'col-span-1 sm:col-span-2 lg:col-span-3 bg-gradient-to-r from-white via-cyan-50/20 to-white'
+                        : tool.featured
                         ? 'sm:col-span-2 lg:col-span-2 bg-gradient-to-br from-white to-orange-50/40'
                         : ''
                     }`}

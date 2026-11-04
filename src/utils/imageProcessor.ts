@@ -165,24 +165,51 @@ export async function applyAiBgRemovalToCanvas(
     }
   }
 
-  // Morphological opening/closing on alpha to remove isolated stray pixels (speckles on t-shirts/skin)
+  // 2. High-performance noise & speckle removal via Integral Image (Summed-Area Table)
+  // Eliminates white dropouts on knitwear/skin and eliminates isolated floating background halos.
   const w = canvas.width;
   const h = canvas.height;
+  const satStride = w + 1;
+  const sat = new Float64Array(satStride * (h + 1));
 
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const idx = y * w + x;
-      // If surrounding neighbors are mostly solid foreground (alpha > 200), fill internal dropouts
-      if (processedMask[idx] < 200) {
-        let solidCount = 0;
-        if (processedMask[idx - 1] > 200) solidCount++;
-        if (processedMask[idx + 1] > 200) solidCount++;
-        if (processedMask[idx - w] > 200) solidCount++;
-        if (processedMask[idx + w] > 200) solidCount++;
+  for (let y = 0; y < h; y++) {
+    let rowSum = 0;
+    const rowOffset = y * w;
+    const satRowOffset = (y + 1) * satStride;
+    const satPrevRowOffset = y * satStride;
+    for (let x = 0; x < w; x++) {
+      rowSum += processedMask[rowOffset + x];
+      sat[satRowOffset + (x + 1)] = sat[satPrevRowOffset + (x + 1)] + rowSum;
+    }
+  }
 
-        // If at least 3 of 4 cardinal neighbors are solid foreground, this was an internal artifact/speckle hole
-        if (solidCount >= 3) {
+  const radius = Math.max(4, Math.min(10, Math.round(Math.min(w, h) / 160)));
+
+  for (let y = 0; y < h; y++) {
+    const y0 = Math.max(0, y - radius);
+    const y1 = Math.min(h - 1, y + radius);
+    const rowOffset = y * w;
+    const y1Offset = (y1 + 1) * satStride;
+    const y0Offset = y0 * satStride;
+
+    for (let x = 0; x < w; x++) {
+      const idx = rowOffset + x;
+      const val = processedMask[idx];
+
+      if (val < 220 || val > 0) {
+        const x0 = Math.max(0, x - radius);
+        const x1 = Math.min(w - 1, x + radius);
+        const area = (x1 - x0 + 1) * (y1 - y0 + 1);
+        const sum = sat[y1Offset + (x1 + 1)] - sat[y0Offset + (x1 + 1)] - sat[y1Offset + x0] + sat[y0Offset + x0];
+        const avg = sum / area;
+
+        // If surrounded by solid subject (sweater, body, skin), fill internal texture dropouts
+        if (val < 200 && avg > 175) {
           processedMask[idx] = 255;
+        }
+        // If surrounded by transparent background, eliminate residual ghost noise / halos
+        else if (val > 0 && avg < 30) {
+          processedMask[idx] = 0;
         }
       }
     }
