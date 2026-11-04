@@ -670,7 +670,10 @@ export function App() {
   }, [ingestFiles]);
 
   const isVeolTool = selectedTool === 'veol-thumb' || selectedTool === 'veol-banner';
-  const hasInteractiveCropCard = isVeolTool || selectedTool === 'crop';
+  const hasInteractiveCropCard =
+    isVeolTool ||
+    selectedTool === 'crop' ||
+    (selectedTool === 'veol-article' && config.cropPreset !== 'none');
   const parsedCropAspectRatio: number | null =
     isVeolTool
       ? config.targetWidth / config.targetHeight
@@ -1367,18 +1370,14 @@ export function App() {
               </div>
             )}
 
-            {/* VEOL IMAGE ARTICLE (Max 1280px width, no upscale, no crop, 72 ppp auto, batch enabled) */}
+            {/* VEOL IMAGE ARTICLE (Max 1280px width, optional crop, 72 ppp auto, batch enabled) */}
             {selectedTool === 'veol-article' && (
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
-                <div className="space-y-3 flex-1">
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
                   <div className="flex flex-wrap items-center gap-2.5">
                     <span className="inline-flex items-center gap-1.5 font-mono text-xs font-bold px-3 py-1.5 rounded-xl bg-stone-900 text-white">
                       <FileImage className="w-3.5 h-3.5 text-emerald-400" />
                       Largeur max ≤ {config.targetWidth} px
-                    </span>
-
-                    <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-stone-100 text-stone-700 border border-stone-200">
-                      <Lock className="w-3.5 h-3.5" /> Ratio conservé • Sans crop • Sans agrandir
                     </span>
 
                     <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-800 border border-emerald-500/20">
@@ -1401,6 +1400,44 @@ export function App() {
                     </div>
                   </div>
 
+                  <ActionApplyButton
+                    count={items.length}
+                    isProcessing={isBatchProcessing}
+                    status={batchProgress.status}
+                    label="Optimiser pour article VEOL"
+                    onClick={handleProcessAll}
+                  />
+                </div>
+
+                {/* Crop Options Bar for Article VEOL */}
+                <div className="pt-3 border-t border-stone-100 flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs font-semibold text-stone-500 mr-1 flex items-center gap-1">
+                      <Crop className="w-3.5 h-3.5 text-stone-600" /> CADRAGE / CROP :
+                    </span>
+                    {[
+                      { id: 'none', label: 'Sans crop (Original)' },
+                      { id: '16:9', label: '16:9 Paysage' },
+                      { id: '4:3', label: '4:3 Photo' },
+                      { id: '3:2', label: '3:2 Reflex' },
+                      { id: '1:1', label: '1:1 Carré' },
+                      { id: 'custom', label: 'Zone libre' },
+                    ].map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => updateConfig({ cropPreset: c.id as CropPreset })}
+                        className={`px-3 py-1 rounded-xl text-xs font-semibold border transition ${
+                          config.cropPreset === c.id
+                            ? 'bg-stone-900 text-white border-stone-900 shadow-sm'
+                            : 'bg-[#FAF8F5] text-stone-700 border-stone-200 hover:bg-stone-100'
+                        }`}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+
                   <div className="flex flex-wrap items-center gap-4 text-xs text-stone-600">
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
@@ -1414,7 +1451,7 @@ export function App() {
                         className="rounded accent-stone-900"
                       />
                       <span>
-                        Ajouter le suffixe{' '}
+                        Suffixe{' '}
                         <code className="font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-800">
                           _article_1280
                         </code>
@@ -1432,14 +1469,6 @@ export function App() {
                     </label>
                   </div>
                 </div>
-
-                <ActionApplyButton
-                  count={items.length}
-                  isProcessing={isBatchProcessing}
-                  status={batchProgress.status}
-                  label="Optimiser pour article VEOL"
-                  onClick={handleProcessAll}
-                />
               </div>
             )}
 
