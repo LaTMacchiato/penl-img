@@ -149,8 +149,8 @@ const MAIN_TOOLS: ToolCardDef[] = [
   },
   {
     id: 'qrcode',
-    badge: 'OUTIL COMPAGNON',
-    title: 'Générateur de QR Code',
+    badge: 'LIEN EXTERNE',
+    title: 'QrCode',
     subtitle: 'Créez et personnalisez des QR codes vectoriels haute définition directement sur qrcode.thmarchand.fr.',
     accentBg: 'bg-emerald-500/10',
     accentText: 'text-emerald-600',
@@ -196,7 +196,7 @@ const VEOL_TOOLS: ToolCardDef[] = [
   },
 ];
 
-const ALL_TOOLS: ToolCardDef[] = [...MAIN_TOOLS, ...VEOL_TOOLS];
+const ALL_TOOLS: ToolCardDef[] = [...VEOL_TOOLS, ...MAIN_TOOLS];
 
 function getDefaultConfigForTool(tool: ToolId): PipelineConfig {
   const base: PipelineConfig = {
@@ -790,30 +790,46 @@ export function App() {
 
             {selectedTool && (
               <div className="hidden lg:flex items-center gap-1 pl-3 border-l border-stone-300">
-                {ALL_TOOLS.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => selectTool(t.id)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
-                      selectedTool === t.id
-                        ? 'bg-stone-900 text-white shadow-sm'
-                        : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
-                    }`}
-                  >
-                    {t.id === 'resize-compress'
-                      ? 'Resize & Compresser'
-                      : t.id === 'veol-thumb'
-                      ? 'Miniature VEOL'
-                      : t.id === 'veol-banner'
-                      ? 'Bannière VEOL'
-                      : t.id === 'veol-article'
-                      ? 'Article VEOL'
-                      : t.id === 'mockup'
-                      ? 'Mockups'
-                      : t.title.split(' ')[0]}
-                  </button>
-                ))}
+                {ALL_TOOLS.map((t) =>
+                  t.externalUrl ? (
+                    <a
+                      key={t.id}
+                      href={t.externalUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-stone-600 hover:text-stone-900 hover:bg-stone-200/60 transition"
+                      title="Ouvrir QrCode dans un nouvel onglet"
+                    >
+                      <span>QrCode</span>
+                      <ExternalLink className="w-3 h-3 text-stone-400" />
+                    </a>
+                  ) : (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => selectTool(t.id)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer ${
+                        selectedTool === t.id
+                          ? 'bg-stone-900 text-white shadow-sm'
+                          : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+                      }`}
+                    >
+                      {t.id === 'resize-compress'
+                        ? 'Resize & Compresser'
+                        : t.id === 'veol-thumb'
+                        ? 'Miniature VEOL'
+                        : t.id === 'veol-banner'
+                        ? 'Bannière VEOL'
+                        : t.id === 'veol-article'
+                        ? 'Article VEOL'
+                        : t.id === 'mockup'
+                        ? 'Mockups'
+                        : t.id === 'qrcode'
+                        ? 'QrCode'
+                        : t.title.split(' ')[0]}
+                    </button>
+                  )
+                )}
               </div>
             )}
           </div>
