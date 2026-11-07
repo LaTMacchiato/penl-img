@@ -230,7 +230,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose }) => {
             <span className="font-mono text-xs text-orange-600">07.</span> Propriété Intellectuelle & Licences Libres
           </h3>
           <p className="bg-stone-50 border border-stone-200/70 rounded-xl p-3 text-stone-700 text-xs">
-            Le code source de Penl.img est distribué sous <strong>licence libre MIT</strong>. Les polices typographiques intégrées (Plus Jakarta Sans, Inter, JetBrains Mono) sont distribuées sous licence libre <em>SIL Open Font License 1.1</em>. Les icônes vectorielles sont issues du projet <em>Lucide Icons</em> sous licence ISC/MIT.
+            Le code source de Penl.img est distribué sous <strong>licence libre MIT</strong>. Le décodage local HEIF/HEIC s'appuie sur la bibliothèque open source <em>heic-to / libheif</em> (licence libre LGPL-3.0). Les polices typographiques intégrées (Plus Jakarta Sans, Inter, JetBrains Mono) sont distribuées sous licence libre <em>SIL Open Font License 1.1</em>. Les icônes vectorielles sont issues du projet <em>Lucide Icons</em> sous licence ISC/MIT.
           </p>
         </section>
       </div>

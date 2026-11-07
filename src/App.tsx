@@ -334,6 +334,8 @@ export function App() {
   const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
+  const [isIngesting, setIsIngesting] = useState(false);
+  const [ingestStatus, setIngestStatus] = useState('');
 
   // State for direct Pan & Zoom dragging on VEOL cards
   const [panDragState, setPanDragState] = useState<{
@@ -408,59 +410,79 @@ export function App() {
     async (extracted: { file: File; relativePath: string }[], autoOpenTool?: ToolId) => {
       if (extracted.length === 0) return;
 
+      const hasHeic = extracted.some(({ file }) => isHeicFile(file));
+      if (hasHeic) {
+        setIsIngesting(true);
+        setIngestStatus('Décodage des fichiers HEIF/HEIC en cours...');
+      }
+
       const targetTool = selectedTool || autoOpenTool || null;
       const activeCfg = targetTool ? getDefaultConfigForTool(targetTool) : config;
 
-      const newItems: ImageItem[] = await Promise.all(
-        extracted.map(async ({ file, relativePath }) => {
-          let actualFile = file;
+      try {
+        const newItems: ImageItem[] = await Promise.all(
+          extracted.map(async ({ file, relativePath }) => {
+            let actualFile = file;
 
-          // Convert HEIC/HEIF files locally to JPEG on the fly
-          if (isHeicFile(file)) {
-            try {
-              const heic2any = (await import('heic2any')).default;
-              const convertedBlob = await heic2any({
-                blob: file,
-                toType: 'image/jpeg',
-                quality: 0.95,
-              });
-              const singleBlob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
-              const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
-              actualFile = new File([singleBlob], newName, { type: 'image/jpeg' });
-            } catch (err) {
-              console.warn('Erreur conversion HEIC locale :', err);
+            // Convert HEIC/HEIF/HIF files locally to JPEG on the fly using modern libheif WebAssembly
+            if (isHeicFile(file)) {
+              try {
+                const { heicTo } = await import('heic-to');
+                const convertedBlob = await heicTo({
+                  blob: file,
+                  type: 'image/jpeg',
+                  quality: 0.95,
+                });
+                const newName = file.name.replace(/\.(heic|heif|hif)$/i, '.jpg');
+                actualFile = new File([convertedBlob], newName, { type: 'image/jpeg' });
+              } catch (err) {
+                console.warn('Erreur conversion HEIC locale avec heic-to :', err);
+                // Fallback: check if the browser can decode it natively (e.g. Safari on macOS)
+                const testUrl = URL.createObjectURL(file);
+                const testDims = await getImageDimensions(testUrl);
+                if (testDims.width > 0 && testDims.height > 0) {
+                  actualFile = file;
+                }
+                URL.revokeObjectURL(testUrl);
+              }
+            }
+
+            const url = URL.createObjectURL(actualFile);
+            const dims = await getImageDimensions(url);
+            return {
+              id: `${actualFile.name}-${actualFile.size}-${Math.random().toString(36).slice(2, 9)}`,
+              file: actualFile,
+              relativePath: relativePath ? relativePath.replace(/\.(heic|heif|hif)$/i, '.jpg') : actualFile.name,
+              originalUrl: url,
+              originalWidth: dims.width,
+              originalHeight: dims.height,
+              originalSize: actualFile.size,
+              panX: 0.5,
+              panY: 0.5,
+              zoom: 1,
+              status: dims.width === 0 ? 'error' : 'idle',
+              errorMsg: dims.width === 0 ? 'Format HEIF/HEIC non décodable ou fichier corrompu' : undefined,
+            };
+          })
+        );
+
+        setItems((prev) => [...prev, ...newItems]);
+        if (!selectedTool && autoOpenTool) {
+          setSelectedTool(autoOpenTool);
+          setConfig(activeCfg);
+        }
+
+        // If in VEOL mode, automatically process incoming images so user sees the 360x210 or 964x140 result right away
+        if (targetTool === 'veol-thumb' || targetTool === 'veol-banner') {
+          for (let i = 0; i < newItems.length; i++) {
+            if (newItems[i].status !== 'error') {
+              await handleProcessSingle(newItems[i], i, activeCfg);
             }
           }
-
-          const url = URL.createObjectURL(actualFile);
-          const dims = await getImageDimensions(url);
-          return {
-            id: `${actualFile.name}-${actualFile.size}-${Math.random().toString(36).slice(2, 9)}`,
-            file: actualFile,
-            relativePath: relativePath ? relativePath.replace(/\.(heic|heif)$/i, '.jpg') : actualFile.name,
-            originalUrl: url,
-            originalWidth: dims.width,
-            originalHeight: dims.height,
-            originalSize: actualFile.size,
-            panX: 0.5,
-            panY: 0.5,
-            zoom: 1,
-            status: 'idle',
-          };
-        })
-      );
-
-      setItems((prev) => [...prev, ...newItems]);
-      if (!selectedTool && autoOpenTool) {
-        setSelectedTool(autoOpenTool);
-        setConfig(activeCfg);
-      }
-
-      // If in VEOL mode, automatically process incoming images so user sees the 360x210 or 964x140 result right away
-      if (targetTool === 'veol-thumb' || targetTool === 'veol-banner') {
-        for (let i = 0; i < newItems.length; i++) {
-          await handleProcessSingle(newItems[i], i, activeCfg);
         }
+      } finally {
+        setIsIngesting(false);
+        setIngestStatus('');
       }
     },
     [selectedTool, config, handleProcessSingle]
@@ -752,7 +774,7 @@ export function App() {
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*,.heic,.heif,image/heic,image/heif"
+        accept="image/*,.heic,.heif,.hif,.HEIC,.HEIF,.HIF,image/heic,image/heif,image/heic-sequence,image/heif-sequence"
         onChange={handleFileInputChange}
         className="hidden"
       />
@@ -2348,6 +2370,14 @@ export function App() {
         isOpen={isLegalModalOpen}
         onClose={() => setIsLegalModalOpen(false)}
       />
+
+      {/* Floating Ingestion Status Notification */}
+      {isIngesting && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-stone-900/95 backdrop-blur-md text-white px-5 py-3 rounded-2xl shadow-2xl border border-stone-700/80 flex items-center gap-3 font-mono text-xs animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <Loader2 className="w-4 h-4 text-orange-400 animate-spin shrink-0" />
+          <span>{ingestStatus || 'Décodage des images en cours...'}</span>
+        </div>
+      )}
     </div>
   );
 }

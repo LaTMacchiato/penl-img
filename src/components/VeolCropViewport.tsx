@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { ImageItem, CustomCropBox } from '../types';
-import { Move, ZoomIn, ZoomOut, Eye, RotateCcw } from 'lucide-react';
+import { Move, ZoomIn, ZoomOut, Eye, RotateCcw, AlertTriangle } from 'lucide-react';
 
 type CornerHandle = 'nw' | 'ne' | 'sw' | 'se';
 
@@ -339,6 +339,18 @@ export const VeolCropViewport: React.FC<VeolCropViewportProps> = ({
     const nextZoom = Math.max(1, Math.min(4, Number((zoom + delta).toFixed(2))));
     onUpdatePanZoom(panX, panY, nextZoom, true);
   };
+
+  if (item.status === 'error' || item.originalWidth === 0) {
+    return (
+      <div className="min-h-[280px] bg-stone-900/90 flex flex-col items-center justify-center p-6 text-center text-stone-300">
+        <AlertTriangle className="w-8 h-8 text-amber-500 mb-2" />
+        <p className="font-semibold text-sm text-white">Impossible de charger cette image</p>
+        <p className="text-xs text-stone-400 mt-1 max-w-sm">
+          {item.errorMsg || "Le format du fichier n'a pas pu être décodé localement."}
+        </p>
+      </div>
+    );
+  }
 
   const isDragging = dragMode !== 'none';
 

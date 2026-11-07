@@ -4,11 +4,16 @@ export interface ExtractedFile {
   relativePath: string;
 }
 
-const IMAGE_EXTENSIONS = /\.(jpe?g|png|webp|avif|gif|bmp|svg|tiff?|heic|heif)$/i;
+const IMAGE_EXTENSIONS = /\.(jpe?g|png|webp|avif|gif|bmp|svg|tiff?|heic|heif|hif)$/i;
 
 export function isImageFile(file: File): boolean {
   if (file.type.startsWith('image/')) return true;
-  if (file.type === 'image/heic' || file.type === 'image/heif') return true;
+  if (
+    file.type === 'image/heic' ||
+    file.type === 'image/heif' ||
+    file.type === 'image/heic-sequence' ||
+    file.type === 'image/heif-sequence'
+  ) return true;
   return IMAGE_EXTENSIONS.test(file.name);
 }
 
@@ -16,7 +21,9 @@ export function isHeicFile(file: File): boolean {
   return (
     file.type === 'image/heic' ||
     file.type === 'image/heif' ||
-    /\.(heic|heif)$/i.test(file.name)
+    file.type === 'image/heic-sequence' ||
+    file.type === 'image/heif-sequence' ||
+    /\.(heic|heif|hif)$/i.test(file.name)
   );
 }
 
