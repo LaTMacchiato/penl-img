@@ -8,7 +8,8 @@ import {
   CropPreset,
   CustomCropBox,
 } from './types';
-import { extractFilesFromDataTransfer, formatBytes, isImageFile, isHeicFile } from './utils/fileExtractor';
+import { extractFilesFromDataTransfer, formatBytes, isImageFile } from './utils/fileExtractor';
+import { isFileHeifOrHeic, decodeHeifFileToJpeg } from './utils/heicDecoder';
 import { processSingleImage } from './utils/imageProcessor';
 import { InspectorModal } from './components/InspectorModal';
 import { VeolCropViewport } from './components/VeolCropViewport';
@@ -53,6 +54,7 @@ import {
   Laptop,
   QrCode,
   ExternalLink,
+  AlertTriangle,
 } from 'lucide-react';
 
 export type ToolId =
@@ -410,61 +412,70 @@ export function App() {
     async (extracted: { file: File; relativePath: string }[], autoOpenTool?: ToolId) => {
       if (extracted.length === 0) return;
 
-      const hasHeic = extracted.some(({ file }) => isHeicFile(file));
-      if (hasHeic) {
+      const heifFlags = await Promise.all(extracted.map(({ file }) => isFileHeifOrHeic(file)));
+      const heifTotal = heifFlags.filter(Boolean).length;
+      if (heifTotal > 0) {
         setIsIngesting(true);
-        setIngestStatus('Décodage des fichiers HEIF/HEIC en cours...');
+        setIngestStatus(
+          heifTotal > 1
+            ? `Décodage des fichiers HEIF/HEIC (0/${heifTotal})...`
+            : 'Décodage du fichier HEIF/HEIC en cours...'
+        );
       }
 
       const targetTool = selectedTool || autoOpenTool || null;
       const activeCfg = targetTool ? getDefaultConfigForTool(targetTool) : config;
 
       try {
-        const newItems: ImageItem[] = await Promise.all(
-          extracted.map(async ({ file, relativePath }) => {
-            let actualFile = file;
+        const newItems: ImageItem[] = [];
+        let heifDone = 0;
 
-            // Convert HEIC/HEIF/HIF files locally to JPEG on the fly using modern libheif WebAssembly
-            if (isHeicFile(file)) {
-              try {
-                const { heicTo } = await import('heic-to');
-                const convertedBlob = await heicTo({
-                  blob: file,
-                  type: 'image/jpeg',
-                  quality: 0.95,
-                });
-                const newName = file.name.replace(/\.(heic|heif|hif)$/i, '.jpg');
-                actualFile = new File([convertedBlob], newName, { type: 'image/jpeg' });
-              } catch (err) {
-                console.warn('Erreur conversion HEIC locale avec heic-to :', err);
-                // Fallback: check if the browser can decode it natively (e.g. Safari on macOS)
-                const testUrl = URL.createObjectURL(file);
-                const testDims = await getImageDimensions(testUrl);
-                if (testDims.width > 0 && testDims.height > 0) {
-                  actualFile = file;
-                }
-                URL.revokeObjectURL(testUrl);
-              }
+        for (let idx = 0; idx < extracted.length; idx++) {
+          const { file, relativePath } = extracted[idx];
+          let actualFile = file;
+          let decodeErr: string | undefined;
+
+          if (heifFlags[idx]) {
+            heifDone++;
+            if (heifTotal > 1) {
+              setIngestStatus(`Décodage des fichiers HEIF/HEIC (${heifDone}/${heifTotal})...`);
             }
+            const res = await decodeHeifFileToJpeg(file);
+            actualFile = res.file;
+            decodeErr = res.error;
+          }
 
-            const url = URL.createObjectURL(actualFile);
-            const dims = await getImageDimensions(url);
-            return {
-              id: `${actualFile.name}-${actualFile.size}-${Math.random().toString(36).slice(2, 9)}`,
-              file: actualFile,
-              relativePath: relativePath ? relativePath.replace(/\.(heic|heif|hif)$/i, '.jpg') : actualFile.name,
-              originalUrl: url,
-              originalWidth: dims.width,
-              originalHeight: dims.height,
-              originalSize: actualFile.size,
-              panX: 0.5,
-              panY: 0.5,
-              zoom: 1,
-              status: dims.width === 0 ? 'error' : 'idle',
-              errorMsg: dims.width === 0 ? 'Format HEIF/HEIC non décodable ou fichier corrompu' : undefined,
-            };
-          })
-        );
+          const url = URL.createObjectURL(actualFile);
+          const dims = await getImageDimensions(url);
+          const convertedExt = actualFile.type === 'image/png'
+            ? '.png'
+            : actualFile.type === 'image/webp'
+            ? '.webp'
+            : actualFile.type === 'image/avif'
+            ? '.avif'
+            : '.jpg';
+
+          newItems.push({
+            id: `${actualFile.name}-${actualFile.size}-${Math.random().toString(36).slice(2, 9)}`,
+            file: actualFile,
+            relativePath:
+              heifFlags[idx] && relativePath
+                ? relativePath.replace(/\.(heic|heif|hif)$/i, convertedExt)
+                : relativePath || actualFile.name,
+            originalUrl: url,
+            originalWidth: dims.width,
+            originalHeight: dims.height,
+            originalSize: actualFile.size,
+            panX: 0.5,
+            panY: 0.5,
+            zoom: 1,
+            status: dims.width === 0 ? 'error' : 'idle',
+            errorMsg:
+              dims.width === 0
+                ? decodeErr || 'Format HEIF/HEIC non décodable ou fichier corrompu'
+                : undefined,
+          });
+        }
 
         setItems((prev) => [...prev, ...newItems]);
         if (!selectedTool && autoOpenTool) {
@@ -506,10 +517,19 @@ export function App() {
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingOver(false);
-    if (e.dataTransfer.items) {
-      const extracted = await extractFilesFromDataTransfer(e.dataTransfer.items);
-      await ingestFiles(extracted, 'resize-compress');
+    let extracted: { file: File; relativePath: string }[] = [];
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      extracted = await extractFilesFromDataTransfer(e.dataTransfer.items);
     }
+    if (extracted.length === 0 && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      for (let i = 0; i < e.dataTransfer.files.length; i++) {
+        const f = e.dataTransfer.files[i];
+        if (isImageFile(f)) {
+          extracted.push({ file: f, relativePath: f.name });
+        }
+      }
+    }
+    await ingestFiles(extracted, 'resize-compress');
   };
 
   const clearAll = () => {
@@ -2250,6 +2270,14 @@ export function App() {
                             </span>
                           </div>
                         )}
+                      </div>
+                    ) : item.status === 'error' || item.originalWidth === 0 ? (
+                      <div className="relative h-44 bg-stone-900/95 flex flex-col items-center justify-center p-4 text-center border-b border-stone-200">
+                        <AlertTriangle className="w-7 h-7 text-amber-500 mb-2" />
+                        <p className="font-semibold text-xs text-white">Fichier non décodable</p>
+                        <p className="text-[11px] text-stone-400 mt-1 line-clamp-3">
+                          {item.errorMsg || 'Format HEIF/HEIC non pris en charge.'}
+                        </p>
                       </div>
                     ) : (
                       <div

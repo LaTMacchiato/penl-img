@@ -101,7 +101,10 @@ export function resolveOutputMime(item: ImageItem, config: PipelineConfig): stri
     if (config.compressionMode === 'target-size' && item.file.type === 'image/png') {
       return 'image/jpeg';
     }
-    return item.file.type || 'image/jpeg';
+    if (!item.file.type || item.file.type === 'image/heic' || item.file.type === 'image/heif') {
+      return 'image/jpeg';
+    }
+    return item.file.type;
   }
   return config.outputFormat;
 }
