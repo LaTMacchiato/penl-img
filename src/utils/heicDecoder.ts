@@ -1,3 +1,5 @@
+import { heicTo } from 'heic-to/csp';
+
 /**
  * Robust client-side decoder for HEIC, HEIF and HIF containers.
  * Supports:
@@ -185,7 +187,6 @@ export async function decodeHeifFileToJpeg(file: File): Promise<{
   // 2. Primary decoder: modern libheif 1.23.7 via `heic-to/csp` (no unsafe-eval)
   let primaryErr: unknown = null;
   try {
-    const { heicTo } = await import('heic-to/csp');
     try {
       const convertedBlob = await heicTo({
         blob: file,
