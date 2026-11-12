@@ -133,6 +133,22 @@ function replaceHeifExt(name: string, newExt: string): string {
   return `${name}.${newExt}`;
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (val) => {
+        clearTimeout(timer);
+        resolve(val);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 export async function isFileHeifOrHeic(file: File): Promise<boolean> {
   if (
     file.type === 'image/heic' ||
@@ -184,24 +200,46 @@ export async function decodeHeifFileToJpeg(file: File): Promise<{
     }
   }
 
-  // 2. Primary decoder: modern libheif 1.23.7 via `heic-to/csp` (no unsafe-eval)
+  // 2. Native browser decoding first (instant ~20ms hardware decode on macOS/iOS Safari; ~2ms reject on Chrome/Firefox)
+  try {
+    const img = await withTimeout(tryLoadImageBlob(file), 4000, 'Timeout décodage natif');
+    const jpegBlob = await rasterizeToJpegBlob(img, img.naturalWidth, img.naturalHeight, 0.95);
+    return {
+      file: new File([jpegBlob], replaceHeifExt(file.name, 'jpg'), { type: 'image/jpeg' }),
+    };
+  } catch {
+    // Expected on Chrome/Firefox where HEIF is not supported natively; continue to libheif
+  }
+
+  // 3. Primary WASM/asm.js decoder: modern libheif 1.23.7 via `heic-to/csp` (with 15s timeout so it never hangs)
   let primaryErr: unknown = null;
   try {
     try {
-      const convertedBlob = await heicTo({
-        blob: file,
-        type: 'image/jpeg',
-        quality: 0.95,
-      });
+      const convertedBlob = await withTimeout(
+        heicTo({
+          blob: file,
+          type: 'image/jpeg',
+          quality: 0.95,
+        }),
+        15000,
+        'Délai de décodage HEIF/HEIC dépassé (15s)'
+      );
       return {
         file: new File([convertedBlob], replaceHeifExt(file.name, 'jpg'), { type: 'image/jpeg' }),
       };
     } catch (innerErr) {
-      // Retry via ImageBitmap in case canvas.toBlob hit a Safari pixel area limit
-      const bitmap = await heicTo({
-        blob: file,
-        type: 'bitmap',
-      });
+      if (innerErr instanceof Error && innerErr.message.includes('dépassé')) {
+        throw innerErr;
+      }
+      // Retry via ImageBitmap in case canvas.toBlob hit a pixel area limit
+      const bitmap = await withTimeout(
+        heicTo({
+          blob: file,
+          type: 'bitmap',
+        }),
+        15000,
+        'Délai de décodage HEIF/HEIC dépassé (15s)'
+      );
       try {
         const jpegBlob = await rasterizeToJpegBlob(bitmap, bitmap.width, bitmap.height, 0.95);
         return {
@@ -215,21 +253,10 @@ export async function decodeHeifFileToJpeg(file: File): Promise<{
     primaryErr = err;
   }
 
-  // 3. Fallback A: Native browser decoding (e.g. Safari on macOS / iOS ImageIO)
-  try {
-    const img = await tryLoadImageBlob(file);
-    const jpegBlob = await rasterizeToJpegBlob(img, img.naturalWidth, img.naturalHeight, 0.95);
-    return {
-      file: new File([jpegBlob], replaceHeifExt(file.name, 'jpg'), { type: 'image/jpeg' }),
-    };
-  } catch {
-    // ignore and try next fallback
-  }
-
-  // 4. Fallback B: AV1-encoded HEIF (`mif1` with `av01` track from Android/cameras) -> decode as image/avif
+  // 4. Fallback: AV1-encoded HEIF (`mif1` with `av01` track from Android/cameras) -> decode as image/avif
   try {
     const avifTyped = new Blob([file], { type: 'image/avif' });
-    const img = await tryLoadImageBlob(avifTyped);
+    const img = await withTimeout(tryLoadImageBlob(avifTyped), 4000, 'Timeout décodage AVIF');
     const jpegBlob = await rasterizeToJpegBlob(img, img.naturalWidth, img.naturalHeight, 0.95);
     return {
       file: new File([jpegBlob], replaceHeifExt(file.name, 'jpg'), { type: 'image/jpeg' }),
