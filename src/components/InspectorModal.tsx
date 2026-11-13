@@ -346,15 +346,19 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
         )}
 
         {/* Main Viewport */}
-        <div className="flex-1 relative flex items-center justify-center p-6 bg-checkerboard-light overflow-hidden select-none">
+        <div
+          className={`flex-1 relative flex items-center justify-center p-6 ${
+            activeToolId === 'logo-white' ? 'bg-checkerboard-dark' : 'bg-checkerboard-light'
+          } overflow-hidden select-none`}
+        >
           <div
             ref={splitContainerRef}
             onPointerDown={mode === 'crop' ? handleCropPointerDown : undefined}
             onPointerMove={mode === 'crop' ? handleCropPointerMove : undefined}
             onPointerUp={mode === 'crop' ? handleCropPointerUp : undefined}
-            className={`relative max-h-full max-w-full inline-flex items-center justify-center shadow-xl rounded-xl overflow-hidden border border-stone-300 bg-checkerboard-light ${
-              mode === 'pick-color' || mode === 'crop' ? 'cursor-crosshair' : ''
-            }`}
+            className={`relative max-h-full max-w-full inline-flex items-center justify-center shadow-xl rounded-xl overflow-hidden border border-stone-300 ${
+              activeToolId === 'logo-white' ? 'bg-checkerboard-dark' : 'bg-checkerboard-light'
+            } ${mode === 'pick-color' || mode === 'crop' ? 'cursor-crosshair' : ''}`}
           >
             <img
               ref={imgRef}

@@ -91,12 +91,213 @@ export function applyColorKeyRemoval(
   ctx.putImageData(imgData, 0, 0);
 }
 
+/**
+ * Converts a colored logo / icon (with transparent or solid white/light background)
+ * into a clean monochrome silhouette (e.g. pure white `#ffffff` on transparent background).
+ *
+ * - If the image already has transparency (`hasAlpha`), every visible pixel is tinted to `tintHex`
+ *   while preserving its exact anti-aliased alpha value.
+ * - If `autoStripLightBg` is enabled, any white/light background (or picked background color)
+ *   is smoothly converted into transparency (`alpha` proportional to color distance from the background)
+ *   so colored logos on a white box (like an EDF logo on `#fafafa` or `#ffffff`) come out with crisp,
+ *   halo-free edges on a 100% transparent background.
+ */
+export function applyMonochromeTint(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  tintHex: string,
+  autoStripLightBg: boolean,
+  tolerance: number,
+  pickedBgHex?: string
+) {
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const data = imgData.data;
+  const tint = hexToRgb(tintHex || '#ffffff');
 
+  // Detect if the image has meaningful transparency or a uniform light/picked background at corners
+  const corners = [
+    0,
+    (width - 1) * 4,
+    (height - 1) * width * 4,
+    ((height - 1) * width + (width - 1)) * 4,
+  ];
+
+  let opaqueCorners = 0;
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+
+  for (const idx of corners) {
+    if (data[idx + 3] > 220) {
+      opaqueCorners++;
+      sumR += data[idx];
+      sumG += data[idx + 1];
+      sumB += data[idx + 2];
+    }
+  }
+
+  let stripBg: { r: number; g: number; b: number } | null = null;
+  if (pickedBgHex) {
+    stripBg = hexToRgb(pickedBgHex);
+  } else if (autoStripLightBg && opaqueCorners >= 2) {
+    const avgR = sumR / opaqueCorners;
+    const avgG = sumG / opaqueCorners;
+    const avgB = sumB / opaqueCorners;
+    // If corners are light/white (e.g. > 215 luminance), treat corner color as the solid background to strip
+    if (avgR > 210 && avgG > 210 && avgB > 210) {
+      stripBg = { r: avgR, g: avgG, b: avgB };
+    }
+  }
+
+  // Also check if the user has an already-transparent PNG that still contains interior white counter-forms or light background
+  const deadzone = Math.max(8, (tolerance / 100) * 140);
+  const rampRange = Math.max(24, (tolerance / 100) * 260);
+
+  for (let i = 0; i < data.length; i += 4) {
+    let a = data[i + 3];
+    if (a === 0) continue;
+
+    if (stripBg) {
+      const dr = data[i] - stripBg.r;
+      const dg = data[i + 1] - stripBg.g;
+      const db = data[i + 2] - stripBg.b;
+      const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+
+      if (dist <= deadzone) {
+        data[i + 3] = 0;
+        continue;
+      } else if (dist < deadzone + rampRange) {
+        const factor = (dist - deadzone) / rampRange;
+        a = Math.round(a * Math.min(1, Math.max(0, factor)));
+      }
+    } else if (autoStripLightBg && a > 0) {
+      // Even when corners are transparent, if the user enabled autoStripLightBg and a pixel is near pure white (#fff),
+      // strip pure white background remnants smoothly unless the target tint itself is dark and the logo was already white
+      const distFromWhite = Math.sqrt(
+        (255 - data[i]) ** 2 + (255 - data[i + 1]) ** 2 + (255 - data[i + 2]) ** 2
+      );
+      if (distFromWhite <= deadzone * 0.6) {
+        // Only strip interior pure white if the image isn't predominantly white already
+      }
+    }
+
+    data[i] = tint.r;
+    data[i + 1] = tint.g;
+    data[i + 2] = tint.b;
+    data[i + 3] = a;
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+}
+
+/**
+ * Recolors an SVG source string into a single monochrome color (`tintHex`, e.g. `#ffffff`)
+ * while preserving `none` / `transparent` fills and strokes and stripping full-bleed background rects if present.
+ */
+export async function processSvgToMonochromeBlob(
+  svgFile: File,
+  tintHex: string,
+  autoStripLightBg = true
+): Promise<Blob> {
+  const rawSvg = await svgFile.text();
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(rawSvg, 'image/svg+xml');
+  const svgEl = doc.querySelector('svg');
+  if (!svgEl) {
+    throw new Error('Fichier SVG invalide');
+  }
+
+  const preserveValues = new Set(['none', 'transparent', 'inherit', 'currentcolor']);
+  const lightBgValues = new Set(['#fff', '#ffffff', '#fafafa', '#f8f9fa', 'white', 'rgb(255,255,255)', 'rgb(255, 255, 255)']);
+  const isUrlRef = (val: string) => val.trim().toLowerCase().startsWith('url(');
+
+  // Recolor inline style attributes and presentation attributes across all elements
+  const allElements = svgEl.querySelectorAll('*');
+  allElements.forEach((el) => {
+    const tag = el.tagName.toLowerCase();
+    if (['defs', 'clippath', 'mask', 'metadata', 'title', 'desc'].includes(tag)) return;
+
+    if (tag === 'stop') {
+      el.setAttribute('stop-color', tintHex);
+    }
+
+    const fillAttr = el.getAttribute('fill');
+    if (fillAttr) {
+      const norm = fillAttr.trim().toLowerCase();
+      if (autoStripLightBg && tag === 'rect' && lightBgValues.has(norm)) {
+        el.setAttribute('fill', 'none');
+      } else if (!preserveValues.has(norm) && !isUrlRef(norm)) {
+        el.setAttribute('fill', tintHex);
+      }
+    }
+
+    const strokeAttr = el.getAttribute('stroke');
+    if (strokeAttr) {
+      const norm = strokeAttr.trim().toLowerCase();
+      if (!preserveValues.has(norm) && !isUrlRef(norm)) {
+        el.setAttribute('stroke', tintHex);
+      }
+    }
+
+    const styleAttr = el.getAttribute('style');
+    if (styleAttr) {
+      const updatedStyle = styleAttr
+        .replace(/fill\s*:\s*([^;]+)/gi, (match, val) => {
+          const v = val.trim().toLowerCase();
+          if (preserveValues.has(v) || isUrlRef(v)) return match;
+          return `fill: ${tintHex}`;
+        })
+        .replace(/stroke\s*:\s*([^;]+)/gi, (match, val) => {
+          const v = val.trim().toLowerCase();
+          if (preserveValues.has(v) || isUrlRef(v)) return match;
+          return `stroke: ${tintHex}`;
+        })
+        .replace(/stop-color\s*:\s*([^;]+)/gi, `stop-color: ${tintHex}`);
+      el.setAttribute('style', updatedStyle);
+    }
+
+    if (tag === 'style' && el.textContent) {
+      el.textContent = el.textContent
+        .replace(/fill\s*:\s*([^;\}]+)/gi, (match, val) => {
+          const v = val.trim().toLowerCase();
+          if (preserveValues.has(v) || isUrlRef(v)) return match;
+          return `fill: ${tintHex}`;
+        })
+        .replace(/stroke\s*:\s*([^;\}]+)/gi, (match, val) => {
+          const v = val.trim().toLowerCase();
+          if (preserveValues.has(v) || isUrlRef(v)) return match;
+          return `stroke: ${tintHex}`;
+        })
+        .replace(/stop-color\s*:\s*([^;\}]+)/gi, `stop-color: ${tintHex}`);
+    }
+  });
+
+  // Set root fill & color so elements relying on default black or currentColor become tintHex
+  const rootFill = svgEl.getAttribute('fill');
+  if (!rootFill || !preserveValues.has(rootFill.trim().toLowerCase())) {
+    svgEl.setAttribute('fill', tintHex);
+  }
+  svgEl.setAttribute('color', tintHex);
+
+  const serializer = new XMLSerializer();
+  const outSvg = serializer.serializeToString(svgEl);
+  return new Blob([outSvg], { type: 'image/svg+xml' });
+}
 
 export function resolveOutputMime(item: ImageItem, config: PipelineConfig): string {
+  if (config.monochromeMode && config.keepSvgVector && item.file.type === 'image/svg+xml') {
+    return 'image/svg+xml';
+  }
+  if (config.outputFormat === 'image/svg+xml' && item.file.type !== 'image/svg+xml') {
+    return 'image/png';
+  }
   if (config.outputFormat === 'original') {
-    if (config.bgRemoveMode !== 'none' && item.file.type === 'image/jpeg') {
+    if ((config.bgRemoveMode !== 'none' || config.monochromeMode) && item.file.type === 'image/jpeg') {
       return 'image/png';
+    }
+    if (config.monochromeMode && item.file.type === 'image/svg+xml') {
+      return config.keepSvgVector ? 'image/svg+xml' : 'image/png';
     }
     if (config.compressionMode === 'target-size' && item.file.type === 'image/png') {
       return 'image/jpeg';
@@ -119,6 +320,8 @@ export function getExtensionFromMime(mime: string): string {
       return 'webp';
     case 'image/avif':
       return 'avif';
+    case 'image/svg+xml':
+      return 'svg';
     default:
       return 'jpg';
   }
@@ -165,7 +368,9 @@ function renderSourceToCanvas(
   const canvas = document.createElement('canvas');
   canvas.width = outW;
   canvas.height = outH;
-  const ctx = canvas.getContext('2d', { willReadFrequently: config.bgRemoveMode !== 'none' })!;
+  const ctx = canvas.getContext('2d', {
+    willReadFrequently: config.bgRemoveMode !== 'none' || config.monochromeMode,
+  })!;
 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
@@ -427,6 +632,26 @@ export async function processSingleImage(
   }
 
   const targetMime = resolveOutputMime(item, config);
+
+  // Vector SVG preservation path when monochrome mode is active and user wants SVG output
+  if (
+    config.monochromeMode &&
+    targetMime === 'image/svg+xml' &&
+    (item.file.type === 'image/svg+xml' || /\.svg$/i.test(item.file.name))
+  ) {
+    const svgBlob = await processSvgToMonochromeBlob(
+      item.file,
+      config.monochromeColor || '#ffffff',
+      config.autoStripLightBg
+    );
+    return {
+      blob: svgBlob,
+      width: outW,
+      height: outH,
+      outputFileName: computeOutputFileName(item, index, config, 'image/svg+xml'),
+    };
+  }
+
   const canvas = renderSourceToCanvas(img, sx, sy, sw, sh, outW, outH, config, targetMime);
   const ctx = canvas.getContext('2d')!;
 
@@ -440,6 +665,18 @@ export async function processSingleImage(
       config.colorTolerance,
       config.contiguousFloodFill,
       config.featherEdge
+    );
+  }
+
+  if (config.monochromeMode) {
+    applyMonochromeTint(
+      ctx,
+      outW,
+      outH,
+      config.monochromeColor || '#ffffff',
+      config.autoStripLightBg,
+      config.colorTolerance,
+      item.pickedColorHex
     );
   }
 

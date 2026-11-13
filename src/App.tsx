@@ -55,15 +55,18 @@ import {
   QrCode,
   ExternalLink,
   AlertTriangle,
+  Paintbrush,
 } from 'lucide-react';
 
 export type ToolId =
   | 'resize-compress'
   | 'convert'
   | 'remove-bg'
+  | 'logo-white'
   | 'crop'
   | 'rename'
   | 'mockup'
+  | 'qrcode'
   | 'veol-thumb'
   | 'veol-banner'
   | 'veol-article';
@@ -118,8 +121,19 @@ const MAIN_TOOLS: ToolCardDef[] = [
     icon: <Eraser className="w-5 h-5" />,
   },
   {
+    id: 'logo-white',
+    badge: '04 / SILHOUETTE',
+    title: 'Logo en Blanc (PNG / SVG)',
+    subtitle:
+      'Passez instantanément un logo couleur (PNG, SVG, WebP...) entièrement en blanc avec fond transparent.',
+    accentBg: 'bg-stone-900',
+    accentText: 'text-white',
+    accentBorder: 'group-hover:border-stone-900/60',
+    icon: <Paintbrush className="w-5 h-5" />,
+  },
+  {
     id: 'crop',
-    badge: '04 / CADRAGE',
+    badge: '05 / CADRAGE',
     title: 'Recadrer & Pivoter',
     subtitle: 'Appliquez un ratio carré 1:1, 16:9, 4:3, pivotez à 90° ou recadrez librement à la souris.',
     accentBg: 'bg-amber-500/10',
@@ -129,7 +143,7 @@ const MAIN_TOOLS: ToolCardDef[] = [
   },
   {
     id: 'rename',
-    badge: '05 / ORGANISATION',
+    badge: '06 / ORGANISATION',
     title: 'Renommer un Dossier',
     subtitle: 'Renommage séquentiel (photo_001...), ajout de préfixe/suffixe pour tout un dossier.',
     accentBg: 'bg-rose-500/10',
@@ -139,14 +153,13 @@ const MAIN_TOOLS: ToolCardDef[] = [
   },
   {
     id: 'mockup',
-    badge: '06 / CONTEXTUALISATION',
+    badge: '07 / CONTEXTUALISATION',
     title: 'Mockup Ordinateur & Smartphone',
     subtitle: 'Intégrez vos captures d’écran dans un faux ordinateur portable ou smartphone avec fond élégant.',
     accentBg: 'bg-cyan-500/10',
     accentText: 'text-cyan-600',
     accentBorder: 'group-hover:border-cyan-500/50',
     icon: <Laptop className="w-5 h-5" />,
-    twoColumns: true,
   },
   {
     id: 'qrcode',
@@ -229,6 +242,11 @@ function getDefaultConfigForTool(tool: ToolId): PipelineConfig {
     featherEdge: true,
     contiguousFloodFill: true,
 
+    monochromeMode: false,
+    monochromeColor: '#ffffff',
+    autoStripLightBg: true,
+    keepSvgVector: true,
+
     renamePrefix: '',
     renameSuffix: '',
     renamePattern: 'keep',
@@ -297,6 +315,17 @@ function getDefaultConfigForTool(tool: ToolId): PipelineConfig {
         bgRemoveMode: 'color-key',
         bgReplaceColor: 'transparent',
         colorTolerance: 20,
+      };
+    case 'logo-white':
+      return {
+        ...base,
+        outputFormat: 'image/png',
+        monochromeMode: true,
+        monochromeColor: '#ffffff',
+        autoStripLightBg: true,
+        keepSvgVector: true,
+        colorTolerance: 18,
+        renameSuffix: '_blanc',
       };
     case 'crop':
       return { ...base, cropPreset: '1:1', outputFormat: 'image/jpeg', quality: 90 };
@@ -483,8 +512,12 @@ export function App() {
           setConfig(activeCfg);
         }
 
-        // If in VEOL mode, automatically process incoming images so user sees the 360x210 or 964x140 result right away
-        if (targetTool === 'veol-thumb' || targetTool === 'veol-banner') {
+        // If in VEOL mode or Logo en Blanc mode, automatically process incoming images right away
+        if (
+          targetTool === 'veol-thumb' ||
+          targetTool === 'veol-banner' ||
+          targetTool === 'logo-white'
+        ) {
           for (let i = 0; i < newItems.length; i++) {
             if (newItems[i].status !== 'error') {
               await handleProcessSingle(newItems[i], i, activeCfg);
@@ -865,6 +898,8 @@ export function App() {
                         ? 'Article VEOL'
                         : t.id === 'mockup'
                         ? 'Mockups'
+                        : t.id === 'logo-white'
+                        ? 'Logo Blanc'
                         : t.id === 'qrcode'
                         ? 'QrCode'
                         : t.title.split(' ')[0]}
@@ -1768,6 +1803,129 @@ export function App() {
               </div>
             )}
 
+            {/* 3b. LOGO EN BLANC (MONOCHROME SILHOUETTE PNG / SVG) */}
+            {selectedTool === 'logo-white' && (
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-3 flex-1">
+                  {/* Row 1: Silhouette Color Presets */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="font-mono text-xs font-semibold text-stone-500 flex items-center gap-1.5">
+                      <Paintbrush className="w-3.5 h-3.5 text-stone-700" />
+                      COULEUR DU LOGO :
+                    </span>
+                    {[
+                      {
+                        hex: '#ffffff',
+                        label: 'Blanc Pur (#FFFFFF)',
+                        dot: 'bg-white border-stone-400 shadow-sm',
+                      },
+                      {
+                        hex: '#000000',
+                        label: 'Noir Pur (#000000)',
+                        dot: 'bg-black border-stone-900',
+                      },
+                      {
+                        hex: '#001a70',
+                        label: 'Bleu EDF (#001A70)',
+                        dot: 'bg-[#001a70] border-[#001a70]',
+                      },
+                      {
+                        hex: '#fe5815',
+                        label: 'Orange EDF (#FE5815)',
+                        dot: 'bg-[#fe5815] border-[#fe5815]',
+                      },
+                    ].map((preset) => (
+                      <button
+                        key={preset.hex}
+                        type="button"
+                        onClick={() => updateConfig({ monochromeColor: preset.hex })}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                          config.monochromeColor.toLowerCase() === preset.hex
+                            ? 'bg-stone-900 text-white border-stone-900 shadow-sm'
+                            : 'bg-[#FAF8F5] text-stone-700 border-stone-200 hover:bg-stone-100'
+                        }`}
+                      >
+                        <span className={`w-3 h-3 rounded-full border ${preset.dot}`} />
+                        {preset.label}
+                      </button>
+                    ))}
+
+                    <div className="flex items-center gap-1.5 pl-2 border-l border-stone-200">
+                      <span className="text-xs text-stone-500 font-medium">Autre teinte :</span>
+                      <input
+                        type="color"
+                        value={config.monochromeColor || '#ffffff'}
+                        onChange={(e) => updateConfig({ monochromeColor: e.target.value })}
+                        className="w-7 h-7 rounded cursor-pointer border border-stone-300 bg-white"
+                        title="Choisir une teinte monochrome personnalisée"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Row 2: Auto-strip light background + Tolerance + SVG vector option */}
+                  <div className="pt-2.5 border-t border-stone-200/80 flex flex-wrap items-center gap-4">
+                    <label className="flex items-center gap-2 text-xs text-stone-700 font-medium cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={config.autoStripLightBg}
+                        onChange={(e) => updateConfig({ autoStripLightBg: e.target.checked })}
+                        className="rounded accent-stone-900"
+                      />
+                      <span>Supprimer auto. le fond blanc/clair (conserver fond 100% transparent)</span>
+                    </label>
+
+                    {config.autoStripLightBg && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-stone-500">Seuil de détourage :</span>
+                        <input
+                          type="range"
+                          min={2}
+                          max={60}
+                          value={config.colorTolerance}
+                          onChange={(e) =>
+                            updateConfig({ colorTolerance: Number(e.target.value) })
+                          }
+                          className="w-24 accent-stone-900"
+                        />
+                        <span className="font-mono text-xs font-bold text-stone-900">
+                          {config.colorTolerance}%
+                        </span>
+                      </div>
+                    )}
+
+                    <label className="flex items-center gap-1.5 text-xs text-stone-700 font-medium cursor-pointer pl-2 border-l border-stone-200">
+                      <input
+                        type="checkbox"
+                        checked={config.keepSvgVector}
+                        onChange={(e) => updateConfig({ keepSvgVector: e.target.checked })}
+                        className="rounded accent-stone-900"
+                      />
+                      <span>Conserver le format vectoriel (.SVG) si la source est un SVG</span>
+                    </label>
+
+                    {items.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setInspectedId(items[0].id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-900 text-white hover:bg-stone-800 transition"
+                        title="Cliquer sur une couleur de fond spécifique à retirer"
+                      >
+                        <Pipette className="w-3.5 h-3.5" /> Pipette fond
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <ActionApplyButton
+                  count={items.length}
+                  isProcessing={isBatchProcessing}
+                  status={batchProgress.status}
+                  label="Passer en blanc"
+                  onClick={handleProcessAll}
+                />
+              </div>
+            )}
+
             {/* 4. CROP & ORIENTATION + OPTIONAL RESIZE & COMPRESS CONTROLS */}
             {selectedTool === 'crop' && (
               <div className="space-y-5">
@@ -2282,7 +2440,11 @@ export function App() {
                     ) : (
                       <div
                         onClick={() => setInspectedId(item.id)}
-                        className="relative h-44 bg-checkerboard-light flex items-center justify-center overflow-hidden border-b border-stone-100 cursor-pointer"
+                        className={`relative h-44 ${
+                          selectedTool === 'logo-white'
+                            ? 'bg-checkerboard-dark'
+                            : 'bg-checkerboard-light'
+                        } flex items-center justify-center overflow-hidden border-b border-stone-100 cursor-pointer`}
                       >
                         <img
                           src={item.processedUrl || item.originalUrl}

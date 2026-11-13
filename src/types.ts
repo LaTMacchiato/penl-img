@@ -1,4 +1,10 @@
-export type OutputFormat = 'original' | 'image/jpeg' | 'image/png' | 'image/webp' | 'image/avif';
+export type OutputFormat =
+  | 'original'
+  | 'image/jpeg'
+  | 'image/png'
+  | 'image/webp'
+  | 'image/avif'
+  | 'image/svg+xml';
 
 export type ResizeMode =
   | 'none'
@@ -53,6 +59,12 @@ export interface PipelineConfig {
   colorTolerance: number; // 0 to 100
   featherEdge: boolean;
   contiguousFloodFill: boolean;
+
+  // 4b. Monochrome Silhouette / Logo Tint (e.g. Logo en Blanc)
+  monochromeMode: boolean;
+  monochromeColor: string; // '#ffffff' by default
+  autoStripLightBg: boolean; // Automatically strip white/light solid background before tinting
+  keepSvgVector: boolean; // When true and input is SVG, also export recolored vector SVG
 
   // 5. Batch Rename & Folder Structure
   renamePrefix: string;
