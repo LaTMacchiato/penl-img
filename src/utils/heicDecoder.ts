@@ -825,10 +825,14 @@ export async function isFileHeifOrHeic(file: File): Promise<boolean> {
   return magic.kind === 'heif';
 }
 
-export async function decodeHeifFileToJpeg(file: File): Promise<{
+export async function decodeHeifFileToJpeg(
+  file: File,
+  onStage?: (stage: string) => void
+): Promise<{
   file: File;
   error?: string;
 }> {
+  onStage?.('Analyse de la signature du fichier…');
   const magic = await detectMagic(file);
 
   // 1. Handle files misnamed as .heic/.heif that are actually standard web formats
@@ -849,6 +853,7 @@ export async function decodeHeifFileToJpeg(file: File): Promise<{
   }
   if (magic.kind === 'avif') {
     try {
+      onStage?.('Décodage AVIF natif…');
       const avifBlob = new Blob([file], { type: 'image/avif' });
       const img = await tryLoadImageBlob(avifBlob);
       const jpegBlob = await rasterizeToJpegBlob(img, img.naturalWidth, img.naturalHeight, 0.95);
@@ -864,6 +869,7 @@ export async function decodeHeifFileToJpeg(file: File): Promise<{
 
   // 2. Native browser decoding first (instant ~20ms hardware decode on macOS/iOS Safari; ~2ms reject on Chrome/Firefox)
   try {
+    onStage?.('Tentative de décodage natif du navigateur…');
     const img = await withTimeout(tryLoadImageBlob(file), 4000, 'Timeout décodage natif');
     const jpegBlob = await rasterizeToJpegBlob(img, img.naturalWidth, img.naturalHeight, 0.95);
     return {
@@ -877,6 +883,7 @@ export async function decodeHeifFileToJpeg(file: File): Promise<{
   let rawBuffer: ArrayBuffer | null = null;
   let parsedContainer: ParsedHeifContainer | null = null;
   try {
+    onStage?.('Lecture du conteneur HEIC (ISO BMFF)…');
     rawBuffer = await file.arrayBuffer();
     parsedContainer = parseAndSanitizeHeifBuffer(rawBuffer);
   } catch {
@@ -886,6 +893,7 @@ export async function decodeHeifFileToJpeg(file: File): Promise<{
   // 3. Hardware-accelerated WebCodecs (`VideoDecoder`) engine (decodes 12MP/24MP/48MP iPhone 17 Pro HEIC in ~150-400ms)
   if (parsedContainer) {
     try {
+      onStage?.('Décodage matériel GPU (WebCodecs HEVC)…');
       const webCodecsBlob = await withTimeout(
         decodeHeicViaWebCodecs(parsedContainer, 0.95),
         12000,
@@ -903,6 +911,7 @@ export async function decodeHeifFileToJpeg(file: File): Promise<{
   const sanitizedBlob = rawBuffer ? new Blob([rawBuffer], { type: file.type || 'image/heic' }) : file;
   let primaryErr: unknown = null;
   try {
+    onStage?.('Décodage logiciel local (libheif WASM)…');
     const bitmap = await withTimeout(
       heicTo({
         blob: sanitizedBlob,
@@ -912,6 +921,7 @@ export async function decodeHeifFileToJpeg(file: File): Promise<{
       'Délai de décodage HEIF/HEIC dépassé (35s)'
     );
     try {
+      onStage?.('Conversion en image exploitable…');
       const jpegBlob = await rasterizeToJpegBlob(bitmap, bitmap.width, bitmap.height, 0.95);
       return {
         file: new File([jpegBlob], replaceHeifExt(file.name, 'jpg'), { type: 'image/jpeg' }),
@@ -925,6 +935,7 @@ export async function decodeHeifFileToJpeg(file: File): Promise<{
 
   // 5. Fallback: AV1-encoded HEIF (`mif1` with `av01` track) -> decode as image/avif
   try {
+    onStage?.('Tentative de secours AV1/AVIF…');
     const avifTyped = new Blob([sanitizedBlob], { type: 'image/avif' });
     const img = await withTimeout(tryLoadImageBlob(avifTyped), 4000, 'Timeout décodage AVIF');
     const jpegBlob = await rasterizeToJpegBlob(img, img.naturalWidth, img.naturalHeight, 0.95);

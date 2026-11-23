@@ -15,6 +15,7 @@ import { InspectorModal } from './components/InspectorModal';
 import { VeolCropViewport } from './components/VeolCropViewport';
 import { LegalModal } from './components/LegalModal';
 import { MockupStudio } from './components/MockupStudio';
+import { ProgressBanner, ActivityProgress } from './components/ProgressBanner';
 import JSZip from 'jszip';
 import {
   Maximize2,
@@ -365,8 +366,14 @@ export function App() {
   const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
-  const [isIngesting, setIsIngesting] = useState(false);
-  const [ingestStatus, setIngestStatus] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<ActivityProgress>({
+    active: false,
+    phase: 'importing',
+    title: '',
+    detail: '',
+    current: 0,
+    total: 0,
+  });
 
   // State for direct Pan & Zoom dragging on VEOL cards
   const [panDragState, setPanDragState] = useState<{
@@ -379,8 +386,39 @@ export function App() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const progressHideTimerRef = useRef<number | null>(null);
+
+  const clearProgressHideTimer = useCallback(() => {
+    if (progressHideTimerRef.current !== null) {
+      window.clearTimeout(progressHideTimerRef.current);
+      progressHideTimerRef.current = null;
+    }
+  }, []);
+
+  const hideUploadProgress = useCallback(() => {
+    clearProgressHideTimer();
+    setUploadProgress((prev) => (prev.active ? { ...prev, active: false } : prev));
+  }, [clearProgressHideTimer]);
+
+  const scheduleHideUploadProgress = useCallback(
+    (delayMs = 2200) => {
+      clearProgressHideTimer();
+      progressHideTimerRef.current = window.setTimeout(() => {
+        progressHideTimerRef.current = null;
+        setUploadProgress((prev) => (prev.phase === 'done' ? { ...prev, active: false } : prev));
+      }, delayMs);
+    },
+    [clearProgressHideTimer]
+  );
+
+  useEffect(() => {
+    return () => {
+      clearProgressHideTimer();
+    };
+  }, [clearProgressHideTimer]);
 
   const purgeItemsFromMemory = useCallback(() => {
+    hideUploadProgress();
     setItems((prev) => {
       prev.forEach((it) => {
         URL.revokeObjectURL(it.originalUrl);
@@ -389,7 +427,7 @@ export function App() {
       return [];
     });
     setInspectedId(null);
-  }, []);
+  }, [hideUploadProgress]);
 
   const selectTool = (toolId: ToolId | null) => {
     purgeItemsFromMemory();
@@ -439,52 +477,116 @@ export function App() {
 
   const ingestFiles = useCallback(
     async (extracted: { file: File; relativePath: string }[], autoOpenTool?: ToolId) => {
-      if (extracted.length === 0) return;
-
-      const heifFlags = await Promise.all(extracted.map(({ file }) => isFileHeifOrHeic(file)));
-      const heifTotal = heifFlags.filter(Boolean).length;
-      if (heifTotal > 0) {
-        setIsIngesting(true);
-        setIngestStatus(
-          heifTotal > 1
-            ? `Décodage des fichiers HEIF/HEIC (0/${heifTotal})...`
-            : 'Décodage du fichier HEIF/HEIC en cours...'
-        );
+      if (extracted.length === 0) {
+        hideUploadProgress();
+        return;
       }
 
+      clearProgressHideTimer();
+
       const targetTool = selectedTool || autoOpenTool || null;
-      const activeCfg = targetTool ? getDefaultConfigForTool(targetTool) : config;
+      const activeCfg = selectedTool
+        ? config
+        : autoOpenTool
+        ? getDefaultConfigForTool(autoOpenTool)
+        : config;
+
+      if (!selectedTool && autoOpenTool) {
+        setSelectedTool(autoOpenTool);
+        setConfig(activeCfg);
+      }
+
+      const totalFiles = extracted.length;
+      const needsAutoProcess =
+        targetTool === 'veol-thumb' ||
+        targetTool === 'veol-banner' ||
+        targetTool === 'logo-white';
+
+      setUploadProgress({
+        active: true,
+        phase: 'importing',
+        title:
+          totalFiles > 1
+            ? `Importation de ${totalFiles} images…`
+            : 'Importation de l’image…',
+        detail: 'Vérification des formats et signatures (JPG, PNG, HEIC, SVG)…',
+        current: 0,
+        total: totalFiles,
+        percent: 0,
+      });
+      await yieldToPaint();
+
+      const heifFlags = await Promise.all(extracted.map(({ file }) => isFileHeifOrHeic(file)));
+      const stepsPerFile = needsAutoProcess ? 2 : 1;
+      const totalSteps = totalFiles * stepsPerFile;
+
+      let errorCount = 0;
 
       try {
-        const newItems: ImageItem[] = [];
-        let heifDone = 0;
-
-        for (let idx = 0; idx < extracted.length; idx++) {
+        for (let idx = 0; idx < totalFiles; idx++) {
           const { file, relativePath } = extracted[idx];
+          const baseStep = idx * stepsPerFile;
           let actualFile = file;
           let decodeErr: string | undefined;
 
           if (heifFlags[idx]) {
-            heifDone++;
-            if (heifTotal > 1) {
-              setIngestStatus(`Décodage des fichiers HEIF/HEIC (${heifDone}/${heifTotal})...`);
-            }
-            const res = await decodeHeifFileToJpeg(file);
+            setUploadProgress({
+              active: true,
+              phase: 'decoding',
+              title:
+                totalFiles > 1
+                  ? `Décodage HEIC / HEIF en cours…`
+                  : 'Décodage HEIC / HEIF local…',
+              currentFile: file.name,
+              detail: 'Préparation du décodeur HEIC…',
+              current: idx + 1,
+              total: totalFiles,
+              percent: Math.round(((baseStep + 0.15) / totalSteps) * 100),
+            });
+            await yieldToPaint();
+
+            const res = await decodeHeifFileToJpeg(file, (stage) => {
+              setUploadProgress((prev) => ({
+                ...prev,
+                detail: stage,
+              }));
+            });
             actualFile = res.file;
             decodeErr = res.error;
+          } else {
+            setUploadProgress({
+              active: true,
+              phase: 'importing',
+              title:
+                totalFiles > 1
+                  ? `Importation des images…`
+                  : 'Importation de l’image…',
+              currentFile: file.name,
+              detail: 'Lecture et génération de l’aperçu local…',
+              current: idx + 1,
+              total: totalFiles,
+              percent: Math.round(((baseStep + 0.35) / totalSteps) * 100),
+            });
+            if (totalFiles <= 24 || idx % 3 === 0) {
+              await yieldToPaint();
+            }
           }
 
           const url = URL.createObjectURL(actualFile);
           const dims = await getImageDimensions(url);
-          const convertedExt = actualFile.type === 'image/png'
-            ? '.png'
-            : actualFile.type === 'image/webp'
-            ? '.webp'
-            : actualFile.type === 'image/avif'
-            ? '.avif'
-            : '.jpg';
+          const convertedExt =
+            actualFile.type === 'image/png'
+              ? '.png'
+              : actualFile.type === 'image/webp'
+              ? '.webp'
+              : actualFile.type === 'image/avif'
+              ? '.avif'
+              : '.jpg';
 
-          newItems.push({
+          const isErr = dims.width === 0;
+          if (isErr) errorCount++;
+
+          const newItem: ImageItem = {
             id: `${actualFile.name}-${actualFile.size}-${Math.random().toString(36).slice(2, 9)}`,
             file: actualFile,
             relativePath:
@@ -498,43 +600,100 @@ export function App() {
             panX: 0.5,
             panY: 0.5,
             zoom: 1,
-            status: dims.width === 0 ? 'error' : 'idle',
-            errorMsg:
-              dims.width === 0
-                ? decodeErr || 'Format HEIF/HEIC non décodable ou fichier corrompu'
-                : undefined,
-          });
-        }
+            status: isErr ? 'error' : 'idle',
+            errorMsg: isErr
+              ? decodeErr || 'Format HEIF/HEIC non décodable ou fichier corrompu'
+              : undefined,
+          };
 
-        setItems((prev) => [...prev, ...newItems]);
-        if (!selectedTool && autoOpenTool) {
-          setSelectedTool(autoOpenTool);
-          setConfig(activeCfg);
-        }
+          // Append progressively so cards appear live during large batch imports
+          setItems((prev) => [...prev, newItem]);
 
-        // If in VEOL mode or Logo en Blanc mode, automatically process incoming images right away
-        if (
-          targetTool === 'veol-thumb' ||
-          targetTool === 'veol-banner' ||
-          targetTool === 'logo-white'
-        ) {
-          for (let i = 0; i < newItems.length; i++) {
-            if (newItems[i].status !== 'error') {
-              await handleProcessSingle(newItems[i], i, activeCfg);
-            }
+          if (needsAutoProcess && !isErr) {
+            setUploadProgress({
+              active: true,
+              phase: 'processing',
+              title:
+                targetTool === 'logo-white'
+                  ? 'Passage en blanc automatique…'
+                  : 'Cadrage VEOL automatique…',
+              currentFile: newItem.file.name,
+              detail:
+                targetTool === 'logo-white'
+                  ? 'Suppression du fond clair et teinte monochrome…'
+                  : 'Recadrage et passage en 72 ppp…',
+              current: idx + 1,
+              total: totalFiles,
+              percent: Math.round(((baseStep + 1.2) / totalSteps) * 100),
+            });
+            await yieldToPaint();
+            await handleProcessSingle(newItem, idx, activeCfg);
           }
+
+          setUploadProgress((prev) => ({
+            ...prev,
+            percent: Math.round((((idx + 1) * stepsPerFile) / totalSteps) * 100),
+          }));
         }
-      } finally {
-        setIsIngesting(false);
-        setIngestStatus('');
+
+        const successCount = totalFiles - errorCount;
+        setUploadProgress({
+          active: true,
+          phase: 'done',
+          title:
+            totalFiles > 1
+              ? `${totalFiles} images importées`
+              : 'Image importée et prête',
+          detail:
+            errorCount > 0
+              ? `${successCount} prête(s) • ${errorCount} non décodable(s)`
+              : needsAutoProcess
+              ? 'Importation et traitement automatique terminés (100 % local)'
+              : 'Prêt pour le traitement (100 % local)',
+          current: totalFiles,
+          total: totalFiles,
+          percent: 100,
+        });
+        scheduleHideUploadProgress(2200);
+      } catch (err: any) {
+        setUploadProgress({
+          active: true,
+          phase: 'done',
+          title: 'Import interrompu',
+          detail: err?.message || 'Une erreur est survenue pendant l’importation',
+          current: totalFiles,
+          total: totalFiles,
+          percent: 100,
+        });
+        scheduleHideUploadProgress(3500);
       }
     },
-    [selectedTool, config, handleProcessSingle]
+    [
+      selectedTool,
+      config,
+      handleProcessSingle,
+      clearProgressHideTimer,
+      hideUploadProgress,
+      scheduleHideUploadProgress,
+    ]
   );
 
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
-    if (!fileList) return;
+    if (!fileList || fileList.length === 0) return;
+
+    clearProgressHideTimer();
+    setUploadProgress({
+      active: true,
+      phase: 'scanning',
+      title: 'Lecture des fichiers sélectionnés…',
+      detail: `Filtrage des images sur ${fileList.length} élément${fileList.length > 1 ? 's' : ''}…`,
+      current: 0,
+      total: 0,
+      percent: undefined,
+    });
+    await yieldToPaint();
+
     const list: { file: File; relativePath: string }[] = [];
     for (let i = 0; i < fileList.length; i++) {
       const f = fileList[i];
@@ -543,16 +702,52 @@ export function App() {
         list.push({ file: f, relativePath: rel });
       }
     }
-    await ingestFiles(list);
     e.target.value = '';
+    if (list.length === 0) {
+      hideUploadProgress();
+      return;
+    }
+    await ingestFiles(list);
   };
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingOver(false);
+
+    clearProgressHideTimer();
+    setUploadProgress({
+      active: true,
+      phase: 'scanning',
+      title: 'Analyse des fichiers déposés…',
+      detail: 'Exploration des dossiers et recherche des images…',
+      current: 0,
+      total: 0,
+      percent: undefined,
+    });
+    await yieldToPaint();
+
     let extracted: { file: File; relativePath: string }[] = [];
     if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-      extracted = await extractFilesFromDataTransfer(e.dataTransfer.items);
+      let lastUpdate = 0;
+      extracted = await extractFilesFromDataTransfer(
+        e.dataTransfer.items,
+        (foundCount, currentName) => {
+          const now = performance.now();
+          if (now - lastUpdate > 60 || foundCount <= 5) {
+            lastUpdate = now;
+            setUploadProgress({
+              active: true,
+              phase: 'scanning',
+              title: 'Exploration du dossier en cours…',
+              currentFile: currentName,
+              detail: `${foundCount} image${foundCount > 1 ? 's' : ''} détectée${foundCount > 1 ? 's' : ''}`,
+              current: foundCount,
+              total: 0,
+              percent: undefined,
+            });
+          }
+        }
+      );
     }
     if (extracted.length === 0 && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       for (let i = 0; i < e.dataTransfer.files.length; i++) {
@@ -561,6 +756,10 @@ export function App() {
           extracted.push({ file: f, relativePath: f.name });
         }
       }
+    }
+    if (extracted.length === 0) {
+      hideUploadProgress();
+      return;
     }
     await ingestFiles(extracted, 'resize-compress');
   };
@@ -583,7 +782,8 @@ export function App() {
   const handleProcessAll = async () => {
     if (items.length === 0 || isBatchProcessing) return;
     setIsBatchProcessing(true);
-    setBatchProgress({ current: 0, total: items.length, status: 'Traitement...' });
+    setBatchProgress({ current: 0, total: items.length, status: 'Préparation…' });
+    await yieldToPaint();
 
     for (let i = 0; i < items.length; i++) {
       setBatchProgress({
@@ -591,6 +791,7 @@ export function App() {
         total: items.length,
         status: `${i + 1}/${items.length} • ${items[i].file.name}`,
       });
+      await yieldToPaint();
       await handleProcessSingle(items[i], i);
     }
 
@@ -808,6 +1009,33 @@ export function App() {
     firstItem && config.targetWidth
       ? Math.round((config.targetWidth * firstItem.originalHeight) / firstItem.originalWidth)
       : null;
+
+  const activeProgress: ActivityProgress = uploadProgress.active
+    ? uploadProgress
+    : isBatchProcessing
+    ? {
+        active: true,
+        phase: 'processing',
+        title:
+          batchProgress.total > 1
+            ? `Traitement de ${batchProgress.total} images…`
+            : 'Traitement de l’image…',
+        detail: batchProgress.status || 'Calcul local en cours…',
+        current: batchProgress.current,
+        total: batchProgress.total,
+        percent:
+          batchProgress.total > 0
+            ? Math.round((batchProgress.current / batchProgress.total) * 100)
+            : undefined,
+      }
+    : {
+        active: false,
+        phase: 'importing',
+        title: '',
+        detail: '',
+        current: 0,
+        total: 0,
+      };
 
   return (
     <div
@@ -2300,6 +2528,9 @@ export function App() {
             )}
           </section>
 
+          {/* INLINE PROGRESS BAR FOR UPLOAD / DECODING / BATCH PROCESSING */}
+          <ProgressBanner progress={activeProgress} variant="inline" />
+
           {/* EXPORT BAR WHEN DONE (For multi-image batch tools) */}
           {doneItems.length > 0 && !isVeolTool && (
             <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-stone-200 rounded-2xl px-5 py-3 shadow-tactile">
@@ -2561,13 +2792,8 @@ export function App() {
         onClose={() => setIsLegalModalOpen(false)}
       />
 
-      {/* Floating Ingestion Status Notification */}
-      {isIngesting && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-stone-900/95 backdrop-blur-md text-white px-5 py-3 rounded-2xl shadow-2xl border border-stone-700/80 flex items-center gap-3 font-mono text-xs animate-in fade-in slide-in-from-bottom-2 duration-150">
-          <Loader2 className="w-4 h-4 text-orange-400 animate-spin shrink-0" />
-          <span>{ingestStatus || 'Décodage des images en cours...'}</span>
-        </div>
-      )}
+      {/* Floating Progress Notification when on Home Hub */}
+      {!selectedTool && <ProgressBanner progress={activeProgress} variant="floating" />}
     </div>
   );
 }
@@ -2601,6 +2827,24 @@ const ActionApplyButton: React.FC<{
     )}
   </button>
 );
+
+function yieldToPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    const fallback = window.setTimeout(done, 32);
+    requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        window.clearTimeout(fallback);
+        done();
+      }, 0);
+    });
+  });
+}
 
 function getImageDimensions(url: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve) => {

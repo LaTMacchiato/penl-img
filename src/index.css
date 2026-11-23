@@ -42,6 +42,72 @@ dialog::backdrop {
   backdrop-filter: blur(4px);
 }
 
+/* Native <progress> custom styling (determinate & indeterminate) */
+progress.penl-progress {
+  appearance: none;
+  border: 0 solid;
+  overflow: clip;
+  container-type: inline-size;
+  --progress-bar-radius: 1e5px;
+  --progress-bar-indeterminate-size: 32%;
+  --progress-bar-indeterminate-animation-duration: 1.4s;
+  border-radius: var(--progress-bar-radius);
+  background: var(--progress-bar-track, #e7e5e4);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.08);
+  display: block;
+  inline-size: 100%;
+  block-size: 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  progress.penl-progress {
+    --progress-bar-indeterminate-animation-duration: 10s;
+  }
+}
+
+progress.penl-progress:dir(rtl) {
+  --progress-bar-indeterminate-animation: penl-progress-indeterminate var(--progress-bar-indeterminate-animation-duration) infinite linear reverse;
+}
+
+progress.penl-progress:indeterminate {
+  --progress-bar-animation: var(
+    --progress-bar-indeterminate-animation,
+    penl-progress-indeterminate var(--progress-bar-indeterminate-animation-duration) infinite linear
+  );
+}
+
+progress.penl-progress::-webkit-progress-bar {
+  background: transparent;
+}
+
+progress.penl-progress::-webkit-progress-value {
+  background: var(--progress-bar-fill, #ea580c);
+  border-radius: var(--progress-bar-radius);
+  transition: inline-size 0.25s ease-out, background-color 0.25s ease;
+  animation: var(--progress-bar-animation, revert-rule);
+}
+
+progress.penl-progress::-moz-progress-bar {
+  background: var(--progress-bar-fill, #ea580c);
+  border-radius: var(--progress-bar-radius);
+  transition: inline-size 0.25s ease-out, background-color 0.25s ease;
+  animation: var(--progress-bar-animation, revert-rule);
+}
+
+@keyframes penl-progress-indeterminate {
+  from,
+  to {
+    inline-size: var(--progress-bar-indeterminate-size);
+    margin-right: auto;
+  }
+  from {
+    translate: -100%;
+  }
+  to {
+    translate: 100cqi;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

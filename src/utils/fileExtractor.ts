@@ -27,7 +27,10 @@ export function isHeicFile(file: File): boolean {
   );
 }
 
-export async function extractFilesFromDataTransfer(items: DataTransferItemList): Promise<ExtractedFile[]> {
+export async function extractFilesFromDataTransfer(
+  items: DataTransferItemList,
+  onProgress?: (foundCount: number, currentName: string) => void
+): Promise<ExtractedFile[]> {
   const results: ExtractedFile[] = [];
   const entries: FileSystemEntry[] = [];
 
@@ -41,6 +44,7 @@ export async function extractFilesFromDataTransfer(items: DataTransferItemList):
         const f = item.getAsFile();
         if (f && isImageFile(f)) {
           results.push({ file: f, relativePath: f.name });
+          onProgress?.(results.length, f.name);
         }
       }
     }
@@ -55,6 +59,7 @@ export async function extractFilesFromDataTransfer(items: DataTransferItemList):
       if (isImageFile(file)) {
         const rel = pathPrefix ? `${pathPrefix}/${file.name}` : file.name;
         results.push({ file, relativePath: rel });
+        onProgress?.(results.length, rel);
       }
     } else if (entry.isDirectory) {
       const dirEntry = entry as FileSystemDirectoryEntry;
