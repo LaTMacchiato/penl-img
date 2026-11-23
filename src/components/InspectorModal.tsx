@@ -12,22 +12,36 @@ import {
   Check,
   GripHorizontal,
   Copy,
+  ChevronLeft,
+  ChevronRight,
+  Sun,
+  Moon,
 } from 'lucide-react';
 
 interface InspectorModalProps {
   item: ImageItem | null;
+  itemIndex?: number;
+  totalItems?: number;
+  onNavigate?: (delta: -1 | 1) => void;
   config: PipelineConfig;
   activeToolId?: string;
   onClose: () => void;
   onUpdateConfig: (partial: Partial<PipelineConfig>) => void;
   onUpdateItem: (id: string, partial: Partial<ImageItem>) => void;
-  onProcessSingle: (item: ImageItem) => Promise<void>;
+  onProcessSingle: (
+    item: ImageItem,
+    idx?: number,
+    overrideConfig?: PipelineConfig
+  ) => Promise<void>;
   onCopyClipboard: (item: ImageItem) => Promise<void>;
   copiedId: string | null;
 }
 
 export const InspectorModal: React.FC<InspectorModalProps> = ({
   item,
+  itemIndex = 0,
+  totalItems = 1,
+  onNavigate,
   config,
   activeToolId,
   onClose,
@@ -45,10 +59,15 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
   const [mode, setMode] = useState<'compare' | 'pick-color' | 'crop'>('compare');
   const [splitPercent, setSplitPercent] = useState(50);
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
+  const [darkBg, setDarkBg] = useState(activeToolId === 'logo-white');
 
   const [isDrawingCrop, setIsDrawingCrop] = useState(false);
   const [cropStart, setCropStart] = useState<{ x: number; y: number } | null>(null);
   const [draftCrop, setDraftCrop] = useState<CustomCropBox | null>(null);
+
+  useEffect(() => {
+    setDarkBg(activeToolId === 'logo-white');
+  }, [activeToolId]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -62,8 +81,7 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
       if (activeToolId === 'crop' && !item.processedUrl) {
         setMode('crop');
       } else if (
-        activeToolId === 'remove-bg' &&
-        config.bgRemoveMode === 'color-key' &&
+        (activeToolId === 'remove-bg' || activeToolId === 'logo-white') &&
         !item.processedUrl
       ) {
         setMode('pick-color');
@@ -73,7 +91,7 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
     } else if (dialog.open) {
       dialog.close();
     }
-  }, [item, activeToolId, config.bgRemoveMode]);
+  }, [item?.id, activeToolId]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -84,7 +102,7 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
     };
     dialog.addEventListener('close', handleClose);
 
-    // Fallback for browsers without closedBy support (per modern-web-guidance `light-dismiss-a-dialog`)
+    // Fallback for browsers without closedBy support
     const handleLightDismissFallback = (event: MouseEvent) => {
       if ('closedBy' in HTMLDialogElement.prototype) return;
       if (event.target !== dialog) return;
@@ -106,9 +124,26 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
     };
   }, [onClose]);
 
+  // Keyboard navigation between images in batch (when split slider isn't focused)
+  useEffect(() => {
+    if (!item || !onNavigate || totalItems <= 1) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (document.activeElement === handleRef.current) return;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        onNavigate(-1);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        onNavigate(1);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [item, onNavigate, totalItems]);
+
   if (!item) return null;
 
-  const handleImageClickForColor = (e: React.MouseEvent<HTMLImageElement>) => {
+  const handleImageClickForColor = async (e: React.MouseEvent<HTMLImageElement>) => {
     if (mode !== 'pick-color' || !imgRef.current) return;
     const img = imgRef.current;
     const rect = img.getBoundingClientRect();
@@ -128,12 +163,24 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
     const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
     const hex = '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
 
+    const updatedItem: ImageItem = { ...item, pickedColorHex: hex };
+    const nextCfg: PipelineConfig =
+      activeToolId === 'logo-white'
+        ? { ...config, colorKeyHex: hex }
+        : { ...config, bgRemoveMode: 'color-key', colorKeyHex: hex };
+
     onUpdateItem(item.id, { pickedColorHex: hex });
-    onUpdateConfig({ bgRemoveMode: 'color-key', colorKeyHex: hex });
+    onUpdateConfig(
+      activeToolId === 'logo-white'
+        ? { colorKeyHex: hex }
+        : { bgRemoveMode: 'color-key', colorKeyHex: hex }
+    );
     setMode('compare');
+    // Immediately reprocess so the user sees the result right away!
+    await onProcessSingle(updatedItem, itemIndex, nextCfg);
   };
 
-  // Pointer capture for Before/After comparison slider (per modern-web-guidance `drag`)
+  // Pointer capture for Before/After comparison slider
   const handleSplitPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -154,9 +201,11 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
   const handleSplitKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'ArrowLeft') {
       e.preventDefault();
+      e.stopPropagation();
       setSplitPercent((p) => Math.max(0, p - 5));
     } else if (e.key === 'ArrowRight') {
       e.preventDefault();
+      e.stopPropagation();
       setSplitPercent((p) => Math.min(100, p + 5));
     }
   };
@@ -190,11 +239,15 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
     setIsDrawingCrop(false);
   };
 
-  const applyCustomCrop = () => {
+  const applyCustomCrop = async () => {
     if (!draftCrop) return;
+    const updatedItem: ImageItem = { ...item, customCrop: draftCrop };
+    const nextCfg: PipelineConfig = { ...config, cropPreset: 'custom' };
     onUpdateItem(item.id, { customCrop: draftCrop });
     onUpdateConfig({ cropPreset: 'custom' });
     setMode('compare');
+    // Immediately reprocess so the user sees the cropped output right away!
+    await onProcessSingle(updatedItem, itemIndex, nextCfg);
   };
 
   const savingsPercent =
@@ -212,32 +265,68 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
       <div className="flex flex-col h-[86vh]">
         {/* Top Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-stone-200 bg-[#FAF8F5]">
-          <div>
+          <div className="flex items-center gap-2 min-w-0">
+            {totalItems > 1 && onNavigate && (
+              <div className="inline-flex items-center gap-1 mr-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => onNavigate(-1)}
+                  className="p-1.5 rounded-lg bg-white border border-stone-200 hover:bg-stone-100 text-stone-700 transition cursor-pointer"
+                  aria-label="Image précédente"
+                  title="Image précédente (←)"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="font-mono text-[11px] font-semibold text-stone-500 px-1 tabular-nums">
+                  {itemIndex + 1}/{totalItems}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onNavigate(1)}
+                  className="p-1.5 rounded-lg bg-white border border-stone-200 hover:bg-stone-100 text-stone-700 transition cursor-pointer"
+                  aria-label="Image suivante"
+                  title="Image suivante (→)"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
             <h2
               id="inspectorDialogTitle"
-              className="text-sm font-bold text-stone-900 flex items-center gap-2.5 flex-wrap"
+              className="text-sm font-bold text-stone-900 flex items-center gap-2 flex-wrap min-w-0"
             >
-              <span className="font-mono text-xs bg-stone-200/80 px-2.5 py-1 rounded-lg text-stone-800">
+              <span className="font-mono text-xs bg-stone-200/80 px-2.5 py-1 rounded-lg text-stone-800 truncate max-w-[240px]">
                 {item.relativePath}
               </span>
               <span className="font-mono text-xs text-stone-500">
                 {item.originalWidth}×{item.originalHeight}px • {formatBytes(item.originalSize)}
               </span>
               {item.processedSize && (
-                <span className="font-mono text-xs px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold">
+                <span
+                  className={`font-mono text-xs px-2.5 py-1 rounded-lg border font-semibold ${
+                    savingsPercent !== null && savingsPercent < 0
+                      ? 'bg-amber-50 text-amber-800 border-amber-200'
+                      : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                  }`}
+                >
                   → {item.processedWidth}×{item.processedHeight}px • {formatBytes(item.processedSize)}{' '}
-                  {savingsPercent !== null && savingsPercent > 0 ? `(-${savingsPercent}%)` : ''}
+                  {savingsPercent !== null && savingsPercent !== 0
+                    ? savingsPercent > 0
+                      ? `(-${savingsPercent}%)`
+                      : `(+${Math.abs(savingsPercent)}%)`
+                    : ''}
                 </span>
               )}
             </h2>
           </div>
 
           {/* Mode Switcher */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setMode('compare')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition border ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition border cursor-pointer ${
                 mode === 'compare'
                   ? 'bg-stone-900 text-white border-stone-900 shadow-sm'
                   : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-100'
@@ -250,7 +339,7 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
             <button
               type="button"
               onClick={() => setMode('pick-color')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition border ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition border cursor-pointer ${
                 mode === 'pick-color'
                   ? 'bg-amber-400 text-stone-950 border-amber-500 shadow-sm'
                   : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-100'
@@ -258,36 +347,46 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
               title="Cliquez sur une couleur de l'image pour supprimer le fond correspondant"
             >
               <Pipette className="w-3.5 h-3.5" />
-              Pipette de fond
+              Pipette
             </button>
 
             <button
               type="button"
               onClick={() => setMode('crop')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition border ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition border cursor-pointer ${
                 mode === 'crop'
                   ? 'bg-orange-500 text-white border-orange-600 shadow-sm'
                   : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-100'
               }`}
             >
               <Crop className="w-3.5 h-3.5" />
-              Tracer un Crop
+              Crop
             </button>
 
             <button
               type="button"
-              onClick={() => onProcessSingle(item)}
+              onClick={() => setDarkBg((d) => !d)}
+              className="p-1.5 rounded-xl bg-white text-stone-700 border border-stone-200 hover:bg-stone-100 transition cursor-pointer"
+              title={darkBg ? 'Passer sur damier clair' : 'Passer sur damier sombre'}
+              aria-label="Basculer le damier clair/sombre"
+            >
+              {darkBg ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-stone-600" />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onProcessSingle(item, itemIndex)}
               disabled={item.status === 'processing'}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              {item.status === 'processing' ? 'Calcul...' : 'Actualiser'}
+              {item.status === 'processing' ? 'Calcul…' : 'Actualiser'}
             </button>
 
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-xl text-stone-500 hover:text-stone-900 hover:bg-stone-200/60 transition"
+              className="p-1.5 rounded-xl text-stone-500 hover:text-stone-900 hover:bg-stone-200/60 transition cursor-pointer"
               aria-label="Fermer l'inspecteur"
             >
               <X className="w-5 h-5" />
@@ -301,13 +400,13 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
             <span className="flex items-center gap-2">
               <Pipette className="w-4 h-4 text-amber-700" />
               <span>
-                <strong>Pipette active :</strong> Cliquez sur l'arrière-plan de l'image pour prélever la couleur exacte à rendre transparente.
+                <strong>Pipette active :</strong> Cliquez sur l’arrière-plan de l’image pour prélever et effacer la couleur instantanément.
               </span>
             </span>
             <button
               type="button"
               onClick={() => setMode('compare')}
-              className="font-semibold underline hover:text-stone-950"
+              className="font-semibold underline hover:text-stone-950 cursor-pointer"
             >
               Terminé
             </button>
@@ -319,25 +418,28 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
             <span className="flex items-center gap-2">
               <Crop className="w-4 h-4 text-orange-600" />
               <span>
-                <strong>Recadrage sur-mesure :</strong> Tracez un rectangle à la souris sur l'image puis cliquez sur Valider.
+                <strong>Recadrage sur-mesure :</strong> Tracez un rectangle à la souris puis cliquez sur Valider.
               </span>
             </span>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
+                  const updatedItem = { ...item, customCrop: undefined };
+                  const nextCfg: PipelineConfig = { ...config, cropPreset: 'none' };
                   onUpdateItem(item.id, { customCrop: undefined });
                   onUpdateConfig({ cropPreset: 'none' });
                   setMode('compare');
+                  await onProcessSingle(updatedItem, itemIndex, nextCfg);
                 }}
-                className="px-2.5 py-1 rounded-lg bg-white border border-stone-300 text-stone-700 hover:bg-stone-100 flex items-center gap-1 font-medium"
+                className="px-2.5 py-1 rounded-lg bg-white border border-stone-300 text-stone-700 hover:bg-stone-100 flex items-center gap-1 font-medium cursor-pointer"
               >
                 <RotateCcw className="w-3 h-3" /> Réinitialiser
               </button>
               <button
                 type="button"
                 onClick={applyCustomCrop}
-                className="px-3 py-1 rounded-lg bg-stone-900 text-white font-semibold hover:bg-stone-800 flex items-center gap-1"
+                className="px-3 py-1 rounded-lg bg-stone-900 text-white font-semibold hover:bg-stone-800 flex items-center gap-1 cursor-pointer"
               >
                 <Check className="w-3.5 h-3.5" /> Valider ce recadrage
               </button>
@@ -348,7 +450,7 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
         {/* Main Viewport */}
         <div
           className={`flex-1 relative flex items-center justify-center p-6 ${
-            activeToolId === 'logo-white' ? 'bg-checkerboard-dark' : 'bg-checkerboard-light'
+            darkBg ? 'bg-checkerboard-dark' : 'bg-checkerboard-light'
           } overflow-hidden select-none`}
         >
           <div
@@ -357,7 +459,7 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
             onPointerMove={mode === 'crop' ? handleCropPointerMove : undefined}
             onPointerUp={mode === 'crop' ? handleCropPointerUp : undefined}
             className={`relative max-h-full max-w-full inline-flex items-center justify-center shadow-xl rounded-xl overflow-hidden border border-stone-300 ${
-              activeToolId === 'logo-white' ? 'bg-checkerboard-dark' : 'bg-checkerboard-light'
+              darkBg ? 'bg-checkerboard-dark' : 'bg-checkerboard-light'
             } ${mode === 'pick-color' || mode === 'crop' ? 'cursor-crosshair' : ''}`}
           >
             <img
@@ -390,7 +492,6 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
                   APRÈS
                 </span>
 
-                {/* Dedicated Draggable Handle for Split Line */}
                 <div
                   ref={handleRef}
                   tabIndex={0}
@@ -427,16 +528,16 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
         </div>
 
         {/* Footer Bar */}
-        <div className="px-6 py-3.5 bg-[#FAF8F5] border-t border-stone-200 flex items-center justify-between text-xs text-stone-500">
+        <div className="px-6 py-3.5 bg-[#FAF8F5] border-t border-stone-200 flex flex-wrap items-center justify-between gap-3 text-xs text-stone-500">
           <span className="font-mono text-[11px]">
-            PENL.IMG LOCAL ENGINE • ZÉRO TRANSFERT RÉSEAU
+            PENL.IMG LOCAL ENGINE • {totalItems > 1 ? 'FLÈCHES ← / → POUR NAVIGUER' : 'ZÉRO TRANSFERT RÉSEAU'}
           </span>
           {item.processedUrl && (
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => onCopyClipboard(item)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-stone-300 hover:bg-stone-100 text-stone-800 font-semibold transition"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-stone-300 hover:bg-stone-100 text-stone-800 font-semibold transition cursor-pointer"
               >
                 {copiedId === item.id ? (
                   <>
@@ -446,7 +547,7 @@ export const InspectorModal: React.FC<InspectorModalProps> = ({
                 ) : (
                   <>
                     <Copy className="w-4 h-4" />
-                    Copier l'image
+                    Copier l’image
                   </>
                 )}
               </button>

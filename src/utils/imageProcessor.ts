@@ -1,5 +1,91 @@
-import { ImageItem, PipelineConfig } from '../types';
+import { ImageItem, PipelineConfig, BlurRegion } from '../types';
 import { finalizeJpegBlob, enforce72DpiOnPngBlob } from './exifAndDpi';
+
+export function getConfigSignature(config: PipelineConfig): string {
+  return JSON.stringify(config);
+}
+
+/**
+ * Applies Gaussian Blur, Pixelate/Mosaic, or Solid Black Redaction masks onto a canvas.
+ * Shared between `PrivacyBlurEditor` (live preview) and `processSingleImage` (export).
+ */
+export function applyBlurRegionsToCanvas(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  regions: BlurRegion[]
+) {
+  if (!regions || regions.length === 0) return;
+
+  // Snapshot original pixels so overlapping blur regions blend cleanly without double-edge artifacts
+  const snapshot = document.createElement('canvas');
+  snapshot.width = width;
+  snapshot.height = height;
+  snapshot.getContext('2d')!.drawImage(ctx.canvas, 0, 0);
+
+  const scaleFactor = Math.max(width, height) / 1000;
+
+  for (const reg of regions) {
+    const rx = Math.round(reg.x * width);
+    const ry = Math.round(reg.y * height);
+    const rw = Math.max(4, Math.round(reg.width * width));
+    const rh = Math.max(4, Math.round(reg.height * height));
+
+    ctx.save();
+    ctx.beginPath();
+    if (reg.shape === 'ellipse') {
+      ctx.ellipse(rx + rw / 2, ry + rh / 2, rw / 2, rh / 2, 0, 0, Math.PI * 2);
+    } else {
+      ctx.rect(rx, ry, rw, rh);
+    }
+    ctx.clip();
+
+    if (reg.mode === 'solid') {
+      ctx.fillStyle = '#1c1917';
+      ctx.fillRect(rx, ry, rw, rh);
+    } else if (reg.mode === 'pixelate') {
+      // Scale pixel block size proportionally to image dimensions
+      const blockSize = Math.max(4, Math.round((reg.intensity * 0.85) * Math.max(0.6, scaleFactor)));
+      const smallW = Math.max(1, Math.round(rw / blockSize));
+      const smallH = Math.max(1, Math.round(rh / blockSize));
+
+      const tmp = document.createElement('canvas');
+      tmp.width = smallW;
+      tmp.height = smallH;
+      const tCtx = tmp.getContext('2d')!;
+      tCtx.imageSmoothingEnabled = true;
+      tCtx.drawImage(snapshot, rx, ry, rw, rh, 0, 0, smallW, smallH);
+
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(tmp, 0, 0, smallW, smallH, rx, ry, rw, rh);
+      ctx.imageSmoothingEnabled = true;
+    } else {
+      // Gaussian blur using a padded crop so borders never bleed dark/transparent edges
+      const blurPx = Math.max(4, Math.round(reg.intensity * Math.max(0.75, scaleFactor)));
+      const pad = Math.min(Math.max(width, height), blurPx * 3);
+      const sx = Math.max(0, rx - pad);
+      const sy = Math.max(0, ry - pad);
+      const ex = Math.min(width, rx + rw + pad);
+      const ey = Math.min(height, ry + rh + pad);
+      const sw = Math.max(1, ex - sx);
+      const sh = Math.max(1, ey - sy);
+
+      const blurCanvas = document.createElement('canvas');
+      blurCanvas.width = sw;
+      blurCanvas.height = sh;
+      const bCtx = blurCanvas.getContext('2d')!;
+      // Draw unblurred base first, then blurred on top to eliminate semi-transparent outer fringe
+      bCtx.drawImage(snapshot, sx, sy, sw, sh, 0, 0, sw, sh);
+      bCtx.filter = `blur(${blurPx}px)`;
+      bCtx.drawImage(snapshot, sx, sy, sw, sh, 0, 0, sw, sh);
+      bCtx.filter = 'none';
+
+      ctx.drawImage(blurCanvas, sx, sy);
+    }
+
+    ctx.restore();
+  }
+}
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const clean = hex.replace('#', '');
@@ -680,6 +766,10 @@ export async function processSingleImage(
     );
   }
 
+  if (item.blurRegions && item.blurRegions.length > 0) {
+    applyBlurRegionsToCanvas(ctx, outW, outH, item.blurRegions);
+  }
+
   // Apply Background Color Replacement if specified and not transparent
   if (
     config.bgRemoveMode !== 'none' &&
@@ -723,13 +813,15 @@ export async function processSingleImage(
   }
 
   const rawBlob = await canvasToBlob(canvas, targetMime, config.quality / 100);
-  const finalBlob = await finalizeBlobMetadataAndDpi(rawBlob, targetMime, item.file, config);
+  // Guard against browsers silently returning image/png when image/avif is unsupported
+  const actualMime = rawBlob.type || targetMime;
+  const finalBlob = await finalizeBlobMetadataAndDpi(rawBlob, actualMime, item.file, config);
 
   return {
     blob: finalBlob,
     width: outW,
     height: outH,
-    outputFileName: computeOutputFileName(item, index, config, targetMime),
+    outputFileName: computeOutputFileName(item, index, config, actualMime),
   };
 }
 

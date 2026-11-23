@@ -51,8 +51,10 @@ export async function extractJpegExifSegments(file: File): Promise<Uint8Array[]>
   }
 }
 
-// Cap XResolution (0x011A) and YResolution (0x011B) in an APP1 Exif segment to 72 DPI if higher
-function capExifSegmentDpiTo72(segment: Uint8Array): Uint8Array {
+// Sanitize an APP1 Exif segment:
+// 1. Always normalize Orientation (0x0112) to 1 (Normal) because canvas.drawImage already bakes browser orientation into pixels.
+// 2. When enforceMax72Dpi is true, cap XResolution (0x011A) and YResolution (0x011B) to 72 DPI.
+function sanitizeExifSegment(segment: Uint8Array, enforceMax72Dpi: boolean): Uint8Array {
   const copy = new Uint8Array(segment);
   const view = new DataView(copy.buffer, copy.byteOffset, copy.byteLength);
 
@@ -77,26 +79,60 @@ function capExifSegmentDpiTo72(segment: Uint8Array): Uint8Array {
     const tag = view.getUint16(entryOffset, littleEndian);
     const type = view.getUint16(entryOffset + 2, littleEndian);
 
-    // 0x011A = XResolution, 0x011B = YResolution (RATIONAL = type 5, two uint32: numerator/denominator)
-    if ((tag === 0x011a || tag === 0x011b) && type === 5) {
-      const valueOffset = tiffStart + view.getUint32(entryOffset + 8, littleEndian);
-      if (valueOffset + 8 <= copy.byteLength) {
-        const num = view.getUint32(valueOffset, littleEndian);
-        const den = view.getUint32(valueOffset + 4, littleEndian) || 1;
-        const dpi = num / den;
-        if (dpi > 72) {
-          view.setUint32(valueOffset, 72, littleEndian);
-          view.setUint32(valueOffset + 4, 1, littleEndian);
+    // 0x0112 = Orientation (SHORT = type 3): reset to 1 so image viewers never double-rotate
+    if (tag === 0x0112 && type === 3) {
+      view.setUint16(entryOffset + 8, 1, littleEndian);
+    }
+
+    if (enforceMax72Dpi) {
+      // 0x011A = XResolution, 0x011B = YResolution (RATIONAL = type 5, two uint32: numerator/denominator)
+      if ((tag === 0x011a || tag === 0x011b) && type === 5) {
+        const valueOffset = tiffStart + view.getUint32(entryOffset + 8, littleEndian);
+        if (valueOffset + 8 <= copy.byteLength) {
+          const num = view.getUint32(valueOffset, littleEndian);
+          const den = view.getUint32(valueOffset + 4, littleEndian) || 1;
+          const dpi = num / den;
+          if (dpi > 72) {
+            view.setUint32(valueOffset, 72, littleEndian);
+            view.setUint32(valueOffset + 4, 1, littleEndian);
+          }
         }
       }
-    }
-    // 0x0128 = ResolutionUnit (SHORT = type 3): set to 2 (inches / dpi)
-    if (tag === 0x0128 && type === 3) {
-      view.setUint16(entryOffset + 8, 2, littleEndian);
+      // 0x0128 = ResolutionUnit (SHORT = type 3): set to 2 (inches / dpi)
+      if (tag === 0x0128 && type === 3) {
+        view.setUint16(entryOffset + 8, 2, littleEndian);
+      }
     }
   }
 
   return copy;
+}
+
+let cachedAvifSupport: Promise<boolean> | null = null;
+
+/**
+ * Runtime feature detection for Canvas AVIF encoding (`toBlob('image/avif')`).
+ * Browsers without AVIF encoder silently fall back to `image/png`.
+ */
+export function supportsAvifEncoding(): Promise<boolean> {
+  if (cachedAvifSupport) return cachedAvifSupport;
+  cachedAvifSupport = new Promise<boolean>((resolve) => {
+    try {
+      const c = document.createElement('canvas');
+      c.width = 2;
+      c.height = 2;
+      c.toBlob(
+        (blob) => {
+          resolve(Boolean(blob && blob.type === 'image/avif'));
+        },
+        'image/avif',
+        0.7
+      );
+    } catch {
+      resolve(false);
+    }
+  });
+  return cachedAvifSupport;
 }
 
 // Patch JPEG blob: set JFIF APP0 density to 72 DPI (if enforceMax72Dpi) and inject preserved EXIF segments (if !stripMetadata)
@@ -148,9 +184,7 @@ export async function finalizeJpegBlob(
   let exifSegments: Uint8Array[] = [];
   if (!stripMetadata) {
     exifSegments = await extractJpegExifSegments(originalFile);
-    if (enforceMax72Dpi) {
-      exifSegments = exifSegments.map(capExifSegmentDpiTo72);
-    }
+    exifSegments = exifSegments.map((seg) => sanitizeExifSegment(seg, enforceMax72Dpi));
   }
 
   if (exifSegments.length === 0 && !enforceMax72Dpi) {

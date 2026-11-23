@@ -1,3 +1,17 @@
+export type ToolId =
+  | 'resize-compress'
+  | 'convert'
+  | 'remove-bg'
+  | 'logo-white'
+  | 'privacy-blur'
+  | 'crop'
+  | 'rename'
+  | 'mockup'
+  | 'qrcode'
+  | 'veol-thumb'
+  | 'veol-banner'
+  | 'veol-article';
+
 export type OutputFormat =
   | 'original'
   | 'image/jpeg'
@@ -19,6 +33,20 @@ export type CompressionMode = 'quality' | 'target-size';
 export type CropPreset = 'none' | '1:1' | '16:9' | '4:3' | '3:2' | '9:16' | 'custom';
 
 export type BgRemoveMode = 'none' | 'color-key';
+
+export type BlurEffectMode = 'blur' | 'pixelate' | 'solid';
+export type BlurShape = 'rect' | 'ellipse';
+
+export interface BlurRegion {
+  id: string;
+  x: number; // 0..1 normalized
+  y: number; // 0..1 normalized
+  width: number; // 0..1 normalized
+  height: number; // 0..1 normalized
+  mode: BlurEffectMode;
+  intensity: number; // 5..45
+  shape: BlurShape;
+}
 
 export interface CustomCropBox {
   x: number; // 0..1 normalized
@@ -66,6 +94,11 @@ export interface PipelineConfig {
   autoStripLightBg: boolean; // Automatically strip white/light solid background before tinting
   keepSvgVector: boolean; // When true and input is SVG, also export recolored vector SVG
 
+  // 4c. Privacy Blur / Redaction defaults
+  blurDefaultMode: BlurEffectMode;
+  blurDefaultIntensity: number;
+  blurDefaultShape: BlurShape;
+
   // 5. Batch Rename & Folder Structure
   renamePrefix: string;
   renameSuffix: string;
@@ -86,6 +119,7 @@ export interface ImageItem {
   // Per-image optional overrides
   customCrop?: CustomCropBox;
   pickedColorHex?: string;
+  blurRegions?: BlurRegion[];
 
   // Direct Pan & Zoom on card for VEOL / exact-crop
   panX?: number; // 0 to 1 (default 0.5 = centered horizontally)
@@ -102,4 +136,11 @@ export interface ImageItem {
   processedSize?: number;
   outputFileName?: string;
   outputDpi?: number;
+  processedConfigSig?: string;
+}
+
+export interface NoticeBanner {
+  id: string;
+  kind: 'success' | 'info' | 'warning' | 'error';
+  message: string;
 }

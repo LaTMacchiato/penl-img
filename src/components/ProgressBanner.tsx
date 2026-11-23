@@ -16,11 +16,13 @@ export interface ActivityProgress {
 interface ProgressBannerProps {
   progress: ActivityProgress;
   variant?: 'inline' | 'floating';
+  onCancel?: () => void;
 }
 
 export const ProgressBanner: React.FC<ProgressBannerProps> = ({
   progress,
   variant = 'inline',
+  onCancel,
 }) => {
   const labelId = useId();
 
@@ -161,6 +163,15 @@ export const ProgressBanner: React.FC<ProgressBannerProps> = ({
             </span>
           ) : (
             <span className="text-[11px] text-stone-400 font-medium">En cours…</span>
+          )}
+          {!isDone && onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="ml-1 px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-rose-50 text-stone-600 hover:text-rose-700 border border-stone-200 hover:border-rose-200 text-[11px] font-semibold transition cursor-pointer"
+            >
+              Annuler
+            </button>
           )}
         </div>
       </div>

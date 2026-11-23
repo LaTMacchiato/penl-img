@@ -1,350 +1,43 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   ImageItem,
   PipelineConfig,
-  OutputFormat,
-  ResizeMode,
-  CompressionMode,
-  CropPreset,
   CustomCropBox,
+  ToolId,
+  NoticeBanner,
 } from './types';
-import { extractFilesFromDataTransfer, formatBytes, isImageFile } from './utils/fileExtractor';
+import {
+  ALL_TOOLS,
+  getDefaultConfigForTool,
+  getDropzoneCopyForTool,
+} from './data/tools';
+import { extractFilesFromDataTransfer, isImageFile } from './utils/fileExtractor';
 import { isFileHeifOrHeic, decodeHeifFileToJpeg } from './utils/heicDecoder';
-import { processSingleImage } from './utils/imageProcessor';
+import { processSingleImage, getConfigSignature } from './utils/imageProcessor';
+import { supportsAvifEncoding } from './utils/exifAndDpi';
+import { HeaderNav } from './components/HeaderNav';
+import { HomeHub } from './components/HomeHub';
+import { ToolControlBar } from './components/ToolControlBar';
+import { ExportBar } from './components/ExportBar';
+import { ImageGrid } from './components/ImageGrid';
 import { InspectorModal } from './components/InspectorModal';
-import { VeolCropViewport } from './components/VeolCropViewport';
 import { LegalModal } from './components/LegalModal';
 import { MockupStudio } from './components/MockupStudio';
+import { PrivacyBlurEditor } from './components/PrivacyBlurEditor';
 import { ProgressBanner, ActivityProgress } from './components/ProgressBanner';
+import { SwitchToolDialog } from './components/SwitchToolDialog';
 import JSZip from 'jszip';
 import {
-  Maximize2,
-  RefreshCw,
-  Eraser,
-  Crop,
-  FolderPen,
   ArrowLeft,
-  ArrowRight,
   FolderUp,
   ImagePlus,
-  Download,
   Trash2,
-  RotateCw,
-  FlipHorizontal,
-  FlipVertical,
-  Lock,
+  Upload,
   CheckCircle2,
-  Loader2,
-  Eye,
-  Archive,
-  FolderCheck,
-  Sparkles,
-  ShieldCheck,
-  Pipette,
-  HardDriveDownload,
-  Wand2,
-  Check,
-  Copy,
-  Move,
-  ZoomIn,
-  ZoomOut,
-  LayoutTemplate,
-  RectangleHorizontal,
-  FileImage,
-  Sliders,
-  Laptop,
-  QrCode,
-  ExternalLink,
   AlertTriangle,
-  Paintbrush,
+  Info,
+  X,
 } from 'lucide-react';
-
-export type ToolId =
-  | 'resize-compress'
-  | 'convert'
-  | 'remove-bg'
-  | 'logo-white'
-  | 'crop'
-  | 'rename'
-  | 'mockup'
-  | 'qrcode'
-  | 'veol-thumb'
-  | 'veol-banner'
-  | 'veol-article';
-
-interface ToolCardDef {
-  id: ToolId;
-  badge: string;
-  title: string;
-  subtitle: string;
-  accentBg: string;
-  accentText: string;
-  accentBorder: string;
-  icon: React.ReactNode;
-  featured?: boolean;
-  compact?: boolean;
-  fullWidth?: boolean;
-  twoColumns?: boolean;
-  externalUrl?: string;
-}
-
-const MAIN_TOOLS: ToolCardDef[] = [
-  {
-    id: 'resize-compress',
-    badge: '01 / DIMENSIONS & QUALITÉ',
-    title: 'Redimensionner & Compresser',
-    subtitle:
-      'Définissez la largeur cible (ratio verrouillé) et le % de compression qualité directement au même endroit, ou fixez un poids cible en Ko.',
-    accentBg: 'bg-orange-500/10',
-    accentText: 'text-orange-600',
-    accentBorder: 'group-hover:border-orange-500/60',
-    icon: <Maximize2 className="w-5 h-5" />,
-    featured: true,
-  },
-  {
-    id: 'convert',
-    badge: '02 / FORMATS',
-    title: 'Convertir Format',
-    subtitle: 'Transformez instantanément vos lots entre JPG, PNG, WebP et AVIF.',
-    accentBg: 'bg-blue-500/10',
-    accentText: 'text-blue-600',
-    accentBorder: 'group-hover:border-blue-500/50',
-    icon: <RefreshCw className="w-5 h-5" />,
-  },
-  {
-    id: 'remove-bg',
-    badge: '03 / DÉTOURAGE',
-    title: 'Retirer le Fond (PNG)',
-    subtitle: 'Effacez un fond uni instantanément à la baguette magique ou pipette de couleur.',
-    accentBg: 'bg-purple-500/10',
-    accentText: 'text-purple-600',
-    accentBorder: 'group-hover:border-purple-500/50',
-    icon: <Eraser className="w-5 h-5" />,
-  },
-  {
-    id: 'logo-white',
-    badge: '04 / SILHOUETTE',
-    title: 'Logo en Blanc (PNG / SVG)',
-    subtitle:
-      'Passez instantanément un logo couleur (PNG, SVG, WebP...) entièrement en blanc avec fond transparent.',
-    accentBg: 'bg-stone-900',
-    accentText: 'text-white',
-    accentBorder: 'group-hover:border-stone-900/60',
-    icon: <Paintbrush className="w-5 h-5" />,
-  },
-  {
-    id: 'crop',
-    badge: '05 / CADRAGE',
-    title: 'Recadrer & Pivoter',
-    subtitle: 'Appliquez un ratio carré 1:1, 16:9, 4:3, pivotez à 90° ou recadrez librement à la souris.',
-    accentBg: 'bg-amber-500/10',
-    accentText: 'text-amber-600',
-    accentBorder: 'group-hover:border-amber-500/50',
-    icon: <Crop className="w-5 h-5" />,
-  },
-  {
-    id: 'rename',
-    badge: '06 / ORGANISATION',
-    title: 'Renommer un Dossier',
-    subtitle: 'Renommage séquentiel (photo_001...), ajout de préfixe/suffixe pour tout un dossier.',
-    accentBg: 'bg-rose-500/10',
-    accentText: 'text-rose-600',
-    accentBorder: 'group-hover:border-rose-500/50',
-    icon: <FolderPen className="w-5 h-5" />,
-  },
-  {
-    id: 'mockup',
-    badge: '07 / CONTEXTUALISATION',
-    title: 'Mockup Ordinateur & Smartphone',
-    subtitle: 'Intégrez vos captures d’écran dans un faux ordinateur portable ou smartphone avec fond élégant.',
-    accentBg: 'bg-cyan-500/10',
-    accentText: 'text-cyan-600',
-    accentBorder: 'group-hover:border-cyan-500/50',
-    icon: <Laptop className="w-5 h-5" />,
-  },
-  {
-    id: 'qrcode',
-    badge: 'LIEN EXTERNE',
-    title: 'QrCode',
-    subtitle: 'Créez et personnalisez des QR codes vectoriels haute définition directement sur qrcode.thmarchand.fr.',
-    accentBg: 'bg-emerald-500/10',
-    accentText: 'text-emerald-600',
-    accentBorder: 'group-hover:border-emerald-500/50',
-    icon: <QrCode className="w-5 h-5" />,
-    externalUrl: 'https://qrcode.thmarchand.fr/',
-  },
-];
-
-const VEOL_TOOLS: ToolCardDef[] = [
-  {
-    id: 'veol-thumb',
-    badge: 'VEOL • 360×210 PX • 72 PPP',
-    title: 'Miniature VEOL',
-    subtitle: 'Crop auto 360×210 px, recadrage glisser-déposer direct et passage auto en 72 ppp.',
-    accentBg: 'bg-teal-500/10',
-    accentText: 'text-teal-700',
-    accentBorder: 'group-hover:border-teal-500/60',
-    icon: <LayoutTemplate className="w-4 h-4" />,
-    compact: true,
-  },
-  {
-    id: 'veol-banner',
-    badge: 'VEOL • 964×140 PX • 72 PPP',
-    title: 'Bannière VEOL',
-    subtitle: 'Crop auto 964×140 px, ajustement horizontal/vertical direct et passage auto en 72 ppp.',
-    accentBg: 'bg-indigo-500/10',
-    accentText: 'text-indigo-700',
-    accentBorder: 'group-hover:border-indigo-500/60',
-    icon: <RectangleHorizontal className="w-4 h-4" />,
-    compact: true,
-  },
-  {
-    id: 'veol-article',
-    badge: 'VEOL • MAX 1280 PX • 72 PPP',
-    title: 'Image article VEOL',
-    subtitle: 'Largeur max 1280 px, cadrage optionnel, 72 ppp auto et traitement par lot.',
-    accentBg: 'bg-emerald-500/10',
-    accentText: 'text-emerald-700',
-    accentBorder: 'group-hover:border-emerald-500/60',
-    icon: <FileImage className="w-4 h-4" />,
-    compact: true,
-  },
-];
-
-const ALL_TOOLS: ToolCardDef[] = [...VEOL_TOOLS, ...MAIN_TOOLS];
-
-function getDefaultConfigForTool(tool: ToolId): PipelineConfig {
-  const base: PipelineConfig = {
-    resizeMode: 'none',
-    targetWidth: 1920,
-    targetHeight: 1080,
-    lockAspectRatio: true,
-    scalePercentage: 50,
-    maxSidePx: 1920,
-    preventUpscale: true,
-
-    outputFormat: 'image/jpeg',
-    compressionMode: 'quality',
-    quality: 85,
-    targetFileSizeKb: 300,
-    stripMetadata: false, // Par défaut, conserve les métadonnées EXIF
-    enforceMax72Dpi: false,
-    backgroundColorForJpeg: '#ffffff',
-
-    cropPreset: 'none',
-    rotateDeg: 0,
-    flipH: false,
-    flipV: false,
-
-    bgRemoveMode: 'none',
-    bgReplaceColor: 'transparent',
-    colorKeyHex: '#ffffff',
-    colorTolerance: 18,
-    featherEdge: true,
-    contiguousFloodFill: true,
-
-    monochromeMode: false,
-    monochromeColor: '#ffffff',
-    autoStripLightBg: true,
-    keepSvgVector: true,
-
-    renamePrefix: '',
-    renameSuffix: '',
-    renamePattern: 'keep',
-    customBaseName: 'photo',
-    preserveSubfolders: true,
-  };
-
-  switch (tool) {
-    case 'resize-compress':
-      return {
-        ...base,
-        resizeMode: 'width-only',
-        targetWidth: 1920,
-        lockAspectRatio: true,
-        compressionMode: 'quality',
-        quality: 85,
-        outputFormat: 'image/jpeg',
-        stripMetadata: false,
-      };
-    case 'veol-thumb':
-      return {
-        ...base,
-        resizeMode: 'exact-crop',
-        targetWidth: 360,
-        targetHeight: 210,
-        lockAspectRatio: true,
-        outputFormat: 'image/jpeg',
-        quality: 88,
-        enforceMax72Dpi: true,
-        stripMetadata: false,
-        renameSuffix: '_miniature_360x210',
-      };
-    case 'veol-banner':
-      return {
-        ...base,
-        resizeMode: 'exact-crop',
-        targetWidth: 964,
-        targetHeight: 140,
-        lockAspectRatio: true,
-        outputFormat: 'image/jpeg',
-        quality: 88,
-        enforceMax72Dpi: true,
-        stripMetadata: false,
-        renameSuffix: '_banniere_964x140',
-      };
-    case 'veol-article':
-      return {
-        ...base,
-        resizeMode: 'width-only',
-        targetWidth: 1280,
-        lockAspectRatio: true,
-        preventUpscale: true,
-        cropPreset: 'none',
-        outputFormat: 'image/jpeg',
-        quality: 85,
-        enforceMax72Dpi: true,
-        stripMetadata: false,
-        renameSuffix: '_article_1280',
-      };
-    case 'convert':
-      return { ...base, outputFormat: 'image/jpeg', quality: 90 };
-    case 'remove-bg':
-      return {
-        ...base,
-        outputFormat: 'image/png',
-        bgRemoveMode: 'color-key',
-        bgReplaceColor: 'transparent',
-        colorTolerance: 20,
-      };
-    case 'logo-white':
-      return {
-        ...base,
-        outputFormat: 'image/png',
-        monochromeMode: true,
-        monochromeColor: '#ffffff',
-        autoStripLightBg: true,
-        keepSvgVector: true,
-        colorTolerance: 18,
-        renameSuffix: '_blanc',
-      };
-    case 'crop':
-      return { ...base, cropPreset: '1:1', outputFormat: 'image/jpeg', quality: 90 };
-    case 'rename':
-      return {
-        ...base,
-        outputFormat: 'original',
-        renamePattern: 'sequential',
-        customBaseName: 'image',
-        quality: 92,
-      };
-    case 'mockup':
-      return {
-        ...base,
-        outputFormat: 'image/png',
-      };
-  }
-}
 
 export function App() {
   const [selectedTool, setSelectedTool] = useState<ToolId | null>(null);
@@ -358,6 +51,7 @@ export function App() {
     current: number;
     total: number;
     status: string;
+    percent?: number;
   }>({
     current: 0,
     total: 0,
@@ -366,6 +60,10 @@ export function App() {
   const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
+  const [avifSupported, setAvifSupported] = useState(true);
+  const [checkerboardDark, setCheckerboardDark] = useState(false);
+  const [pendingSwitchTool, setPendingSwitchTool] = useState<ToolId | null | undefined>(undefined);
+  const [notice, setNotice] = useState<NoticeBanner | null>(null);
   const [uploadProgress, setUploadProgress] = useState<ActivityProgress>({
     active: false,
     phase: 'importing',
@@ -375,18 +73,28 @@ export function App() {
     total: 0,
   });
 
-  // State for direct Pan & Zoom dragging on VEOL cards
-  const [panDragState, setPanDragState] = useState<{
-    id: string;
-    startX: number;
-    startY: number;
-    initialPanX: number;
-    initialPanY: number;
-  } | null>(null);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const progressHideTimerRef = useRef<number | null>(null);
+  const noticeTimerRef = useRef<number | null>(null);
+  const cancelOperationRef = useRef(false);
+  const dragDepthRef = useRef(0);
+
+  // Detect browser Canvas AVIF encoding support once on mount
+  useEffect(() => {
+    supportsAvifEncoding().then((supported) => setAvifSupported(supported));
+  }, []);
+
+  const showNotice = useCallback((kind: NoticeBanner['kind'], message: string) => {
+    if (noticeTimerRef.current !== null) {
+      window.clearTimeout(noticeTimerRef.current);
+    }
+    setNotice({ id: String(Date.now()), kind, message });
+    noticeTimerRef.current = window.setTimeout(() => {
+      setNotice(null);
+      noticeTimerRef.current = null;
+    }, 5000);
+  }, []);
 
   const clearProgressHideTimer = useCallback(() => {
     if (progressHideTimerRef.current !== null) {
@@ -414,10 +122,12 @@ export function App() {
   useEffect(() => {
     return () => {
       clearProgressHideTimer();
+      if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
     };
   }, [clearProgressHideTimer]);
 
   const purgeItemsFromMemory = useCallback(() => {
+    cancelOperationRef.current = true;
     hideUploadProgress();
     setItems((prev) => {
       prev.forEach((it) => {
@@ -429,13 +139,30 @@ export function App() {
     setInspectedId(null);
   }, [hideUploadProgress]);
 
-  const selectTool = (toolId: ToolId | null) => {
-    purgeItemsFromMemory();
-    setSelectedTool(toolId);
-    if (toolId) {
-      setConfig(getDefaultConfigForTool(toolId));
-    }
-  };
+  const applyToolSelectionImmediate = useCallback(
+    (toolId: ToolId | null) => {
+      purgeItemsFromMemory();
+      setSelectedTool(toolId);
+      if (toolId) {
+        setConfig(getDefaultConfigForTool(toolId));
+        setCheckerboardDark(toolId === 'logo-white');
+      }
+    },
+    [purgeItemsFromMemory]
+  );
+
+  // Safe tool navigation: prompt if images are currently loaded
+  const handleRequestSelectTool = useCallback(
+    (toolId: ToolId | null) => {
+      if (toolId === selectedTool) return;
+      if (items.length > 0) {
+        setPendingSwitchTool(toolId);
+      } else {
+        applyToolSelectionImmediate(toolId);
+      }
+    },
+    [selectedTool, items.length, applyToolSelectionImmediate]
+  );
 
   const updateConfig = useCallback((partial: Partial<PipelineConfig>) => {
     setConfig((prev) => ({ ...prev, ...partial }));
@@ -445,9 +172,12 @@ export function App() {
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...partial } : it)));
   }, []);
 
+  const currentConfigSig = useMemo(() => getConfigSignature(config), [config]);
+
   const handleProcessSingle = useCallback(
     async (item: ImageItem, idx?: number, overrideConfig?: PipelineConfig) => {
       const activeCfg = overrideConfig || config;
+      const cfgSig = getConfigSignature(activeCfg);
       const index = idx !== undefined ? idx : items.findIndex((i) => i.id === item.id);
       updateItem(item.id, { status: 'processing', errorMsg: undefined });
       try {
@@ -464,6 +194,7 @@ export function App() {
           processedHeight: res.height,
           processedSize: res.blob.size,
           outputFileName: res.outputFileName,
+          processedConfigSig: cfgSig,
         });
       } catch (err: any) {
         updateItem(item.id, {
@@ -476,16 +207,23 @@ export function App() {
   );
 
   const ingestFiles = useCallback(
-    async (extracted: { file: File; relativePath: string }[], autoOpenTool?: ToolId) => {
+    async (
+      extracted: { file: File; relativePath: string }[],
+      autoOpenTool?: ToolId,
+      forceConfig?: PipelineConfig
+    ) => {
       if (extracted.length === 0) {
         hideUploadProgress();
         return;
       }
 
+      cancelOperationRef.current = false;
       clearProgressHideTimer();
 
-      const targetTool = selectedTool || autoOpenTool || null;
-      const activeCfg = selectedTool
+      const targetTool = forceConfig ? autoOpenTool || selectedTool : selectedTool || autoOpenTool || null;
+      const activeCfg = forceConfig
+        ? forceConfig
+        : selectedTool
         ? config
         : autoOpenTool
         ? getDefaultConfigForTool(autoOpenTool)
@@ -494,6 +232,7 @@ export function App() {
       if (!selectedTool && autoOpenTool) {
         setSelectedTool(autoOpenTool);
         setConfig(activeCfg);
+        setCheckerboardDark(autoOpenTool === 'logo-white');
       }
 
       const totalFiles = extracted.length;
@@ -505,11 +244,8 @@ export function App() {
       setUploadProgress({
         active: true,
         phase: 'importing',
-        title:
-          totalFiles > 1
-            ? `Importation de ${totalFiles} images…`
-            : 'Importation de l’image…',
-        detail: 'Vérification des formats et signatures (JPG, PNG, HEIC, SVG)…',
+        title: totalFiles > 1 ? `Importation de ${totalFiles} images…` : 'Importation de l’image…',
+        detail: 'Vérification des formats et signatures (HEIC, JPG, PNG, WebP, SVG)…',
         current: 0,
         total: totalFiles,
         percent: 0,
@@ -521,9 +257,12 @@ export function App() {
       const totalSteps = totalFiles * stepsPerFile;
 
       let errorCount = 0;
+      let importedCount = 0;
 
       try {
         for (let idx = 0; idx < totalFiles; idx++) {
+          if (cancelOperationRef.current) break;
+
           const { file, relativePath } = extracted[idx];
           const baseStep = idx * stepsPerFile;
           let actualFile = file;
@@ -534,9 +273,7 @@ export function App() {
               active: true,
               phase: 'decoding',
               title:
-                totalFiles > 1
-                  ? `Décodage HEIC / HEIF en cours…`
-                  : 'Décodage HEIC / HEIF local…',
+                totalFiles > 1 ? 'Décodage HEIC / HEIF en cours…' : 'Décodage HEIC / HEIF local…',
               currentFile: file.name,
               detail: 'Préparation du décodeur HEIC…',
               current: idx + 1,
@@ -546,21 +283,16 @@ export function App() {
             await yieldToPaint();
 
             const res = await decodeHeifFileToJpeg(file, (stage) => {
-              setUploadProgress((prev) => ({
-                ...prev,
-                detail: stage,
-              }));
+              setUploadProgress((prev) => ({ ...prev, detail: stage }));
             });
+            if (cancelOperationRef.current) break;
             actualFile = res.file;
             decodeErr = res.error;
           } else {
             setUploadProgress({
               active: true,
               phase: 'importing',
-              title:
-                totalFiles > 1
-                  ? `Importation des images…`
-                  : 'Importation de l’image…',
+              title: totalFiles > 1 ? 'Importation des images…' : 'Importation de l’image…',
               currentFile: file.name,
               detail: 'Lecture et génération de l’aperçu local…',
               current: idx + 1,
@@ -606,10 +338,10 @@ export function App() {
               : undefined,
           };
 
-          // Append progressively so cards appear live during large batch imports
+          importedCount++;
           setItems((prev) => [...prev, newItem]);
 
-          if (needsAutoProcess && !isErr) {
+          if (needsAutoProcess && !isErr && !cancelOperationRef.current) {
             setUploadProgress({
               active: true,
               phase: 'processing',
@@ -636,14 +368,26 @@ export function App() {
           }));
         }
 
+        if (cancelOperationRef.current) {
+          setUploadProgress({
+            active: true,
+            phase: 'done',
+            title: 'Importation annulée',
+            detail: `${importedCount} image${importedCount > 1 ? 's' : ''} déjà chargée${importedCount > 1 ? 's' : ''}`,
+            current: importedCount,
+            total: totalFiles,
+            percent: 100,
+          });
+          scheduleHideUploadProgress(2200);
+          return;
+        }
+
         const successCount = totalFiles - errorCount;
         setUploadProgress({
           active: true,
           phase: 'done',
           title:
-            totalFiles > 1
-              ? `${totalFiles} images importées`
-              : 'Image importée et prête',
+            totalFiles > 1 ? `${totalFiles} images importées` : 'Image importée et prête',
           detail:
             errorCount > 0
               ? `${successCount} prête(s) • ${errorCount} non décodable(s)`
@@ -661,7 +405,7 @@ export function App() {
           phase: 'done',
           title: 'Import interrompu',
           detail: err?.message || 'Une erreur est survenue pendant l’importation',
-          current: totalFiles,
+          current: importedCount,
           total: totalFiles,
           percent: 100,
         });
@@ -678,10 +422,50 @@ export function App() {
     ]
   );
 
+  // Chain processed (or original) files into another Penl.img tool seamlessly
+  const handleChainFilesToTool = useCallback(
+    async (files: { file: File; relativePath: string }[], targetTool: ToolId) => {
+      if (files.length === 0) return;
+      const nextCfg = getDefaultConfigForTool(targetTool);
+      purgeItemsFromMemory();
+      setSelectedTool(targetTool);
+      setConfig(nextCfg);
+      setCheckerboardDark(targetTool === 'logo-white');
+      await yieldToPaint();
+      await ingestFiles(files, targetTool, nextCfg);
+      const targetMeta = ALL_TOOLS.find((t) => t.id === targetTool);
+      showNotice(
+        'info',
+        `${files.length} image${files.length > 1 ? 's' : ''} transférée${files.length > 1 ? 's' : ''} vers « ${targetMeta?.title || targetTool} ».`
+      );
+    },
+    [purgeItemsFromMemory, ingestFiles, showNotice]
+  );
+
+  const handleChainCurrentItems = useCallback(
+    async (targetTool: ToolId) => {
+      const files: { file: File; relativePath: string }[] = items
+        .filter((it) => it.status !== 'error')
+        .map((it) => {
+          if (it.processedBlob) {
+            const name = it.outputFileName || it.file.name;
+            return {
+              file: new File([it.processedBlob], name, { type: it.processedBlob.type }),
+              relativePath: name,
+            };
+          }
+          return { file: it.file, relativePath: it.relativePath || it.file.name };
+        });
+      await handleChainFilesToTool(files, targetTool);
+    },
+    [items, handleChainFilesToTool]
+  );
+
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
 
+    cancelOperationRef.current = false;
     clearProgressHideTimer();
     setUploadProgress({
       active: true,
@@ -705,6 +489,7 @@ export function App() {
     e.target.value = '';
     if (list.length === 0) {
       hideUploadProgress();
+      showNotice('warning', 'Aucune image compatible détectée dans votre sélection.');
       return;
     }
     await ingestFiles(list);
@@ -712,8 +497,10 @@ export function App() {
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
+    dragDepthRef.current = 0;
     setIsDraggingOver(false);
 
+    cancelOperationRef.current = false;
     clearProgressHideTimer();
     setUploadProgress({
       active: true,
@@ -759,13 +546,10 @@ export function App() {
     }
     if (extracted.length === 0) {
       hideUploadProgress();
+      showNotice('warning', 'Aucun fichier image compatible trouvé dans les éléments déposés.');
       return;
     }
     await ingestFiles(extracted, 'resize-compress');
-  };
-
-  const clearAll = () => {
-    purgeItemsFromMemory();
   };
 
   const removeItem = (id: string) => {
@@ -779,31 +563,72 @@ export function App() {
     });
   };
 
-  const handleProcessAll = async () => {
+  const handleProcessAll = useCallback(async () => {
     if (items.length === 0 || isBatchProcessing) return;
+    cancelOperationRef.current = false;
     setIsBatchProcessing(true);
-    setBatchProgress({ current: 0, total: items.length, status: 'Préparation…' });
+    setBatchProgress({ current: 0, total: items.length, status: 'Préparation…', percent: 0 });
     await yieldToPaint();
 
     for (let i = 0; i < items.length; i++) {
+      if (cancelOperationRef.current) break;
       setBatchProgress({
         current: i + 1,
         total: items.length,
         status: `${i + 1}/${items.length} • ${items[i].file.name}`,
+        percent: Math.round(((i + 0.5) / items.length) * 100),
       });
       await yieldToPaint();
       await handleProcessSingle(items[i], i);
     }
 
     setIsBatchProcessing(false);
-    setBatchProgress({ current: items.length, total: items.length, status: 'Terminé' });
-  };
+    setBatchProgress({
+      current: items.length,
+      total: items.length,
+      status: cancelOperationRef.current ? 'Annulé' : 'Terminé',
+      percent: 100,
+    });
+  }, [items, isBatchProcessing, handleProcessSingle]);
+
+  // Smooth debounced live preview when tweaking visual sliders in Logo en Blanc / Retirer le fond (small batches)
+  const autoReprocessTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (
+      (selectedTool !== 'logo-white' && selectedTool !== 'remove-bg') ||
+      items.length === 0 ||
+      items.length > 6 ||
+      isBatchProcessing ||
+      uploadProgress.active
+    ) {
+      return;
+    }
+    const anyDoneAndStale = items.some(
+      (it) =>
+        it.status === 'done' &&
+        Boolean(it.processedConfigSig) &&
+        it.processedConfigSig !== currentConfigSig
+    );
+    if (!anyDoneAndStale) return;
+
+    if (autoReprocessTimerRef.current !== null) {
+      window.clearTimeout(autoReprocessTimerRef.current);
+    }
+    autoReprocessTimerRef.current = window.setTimeout(() => {
+      handleProcessAll();
+    }, 260);
+
+    return () => {
+      if (autoReprocessTimerRef.current !== null) {
+        window.clearTimeout(autoReprocessTimerRef.current);
+      }
+    };
+  }, [selectedTool, currentConfigSig, items, isBatchProcessing, uploadProgress.active, handleProcessAll]);
 
   const handleCopyClipboard = async (item: ImageItem) => {
     const blob = item.processedBlob;
     if (!blob) return;
     try {
-      // Clipboard API requires image/png in many browsers; convert on the fly if needed
       let pngBlob = blob;
       if (blob.type !== 'image/png') {
         const url = URL.createObjectURL(blob);
@@ -814,30 +639,37 @@ export function App() {
         c.height = img.naturalHeight;
         c.getContext('2d')!.drawImage(img, 0, 0);
         pngBlob = await new Promise<Blob>((res, rej) =>
-          c.toBlob((b) => (b ? res(b) : rej(new Error('Clipboard PNG error'))), 'image/png')
+          c.toBlob((b) => (b ? res(b) : rej(new Error('Erreur génération PNG'))), 'image/png')
         );
       }
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
       setCopiedId(item.id);
       setTimeout(() => setCopiedId((prev) => (prev === item.id ? null : prev)), 2000);
     } catch (err: any) {
-      alert('Impossible de copier dans le presse-papier : ' + (err?.message || err));
+      showNotice('error', 'Impossible de copier dans le presse-papier : ' + (err?.message || err));
     }
   };
 
   const handleVeolDownload = async () => {
     if (items.length === 0 || isBatchProcessing) return;
+    cancelOperationRef.current = false;
     setIsBatchProcessing(true);
-    setBatchProgress({ current: 0, total: items.length, status: 'Préparation...' });
+    setBatchProgress({ current: 0, total: items.length, status: 'Préparation…', percent: 0 });
+    await yieldToPaint();
 
+    const cfgSig = getConfigSignature(config);
     const outBlobs: { name: string; blob: Blob }[] = [];
+
     for (let i = 0; i < items.length; i++) {
+      if (cancelOperationRef.current) break;
       const it = items[i];
       setBatchProgress({
         current: i + 1,
         total: items.length,
         status: `${i + 1}/${items.length} • ${it.file.name}`,
+        percent: Math.round(((i + 0.5) / items.length) * 100),
       });
+      await yieldToPaint();
       const res = await processSingleImage(it, i, config);
       if (it.processedUrl) URL.revokeObjectURL(it.processedUrl);
       const processedUrl = URL.createObjectURL(res.blob);
@@ -849,49 +681,85 @@ export function App() {
         processedHeight: res.height,
         processedSize: res.blob.size,
         outputFileName: res.outputFileName,
+        processedConfigSig: cfgSig,
       });
       outBlobs.push({ name: res.outputFileName, blob: res.blob });
     }
 
-    setIsBatchProcessing(false);
-
-    if (outBlobs.length === 1) {
-      const url = URL.createObjectURL(outBlobs[0].blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = outBlobs[0].name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-    } else if (outBlobs.length > 1) {
-      const zip = new JSZip();
-      outBlobs.forEach((f) => zip.file(f.name, f.blob));
-      const content = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(content);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `penl_img_${selectedTool}_${outBlobs.length}.zip`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    if (!cancelOperationRef.current) {
+      if (outBlobs.length === 1) {
+        const url = URL.createObjectURL(outBlobs[0].blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = outBlobs[0].name;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        showNotice('success', `Visuel VEOL téléchargé (${outBlobs[0].name}).`);
+      } else if (outBlobs.length > 1) {
+        const zip = new JSZip();
+        outBlobs.forEach((f) => zip.file(f.name, f.blob));
+        const content = await zip.generateAsync({ type: 'blob' }, (meta) => {
+          setBatchProgress({
+            current: outBlobs.length,
+            total: outBlobs.length,
+            status: `Création de l’archive ZIP (${Math.round(meta.percent)}%)…`,
+            percent: Math.round(meta.percent),
+          });
+        });
+        const url = URL.createObjectURL(content);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `penl_img_${selectedTool}_${outBlobs.length}.zip`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        showNotice('success', `${outBlobs.length} visuels VEOL exportés en ZIP.`);
+      }
     }
+
+    setIsBatchProcessing(false);
   };
 
   const handleDownloadZip = async () => {
     const processedItems = items.filter((it) => it.processedBlob);
-    if (processedItems.length === 0) return;
+    if (processedItems.length === 0 || isBatchProcessing) return;
 
-    const zip = new JSZip();
-    processedItems.forEach((it) => {
-      const path = it.outputFileName || it.file.name;
-      zip.file(path, it.processedBlob!);
+    setIsBatchProcessing(true);
+    setBatchProgress({
+      current: processedItems.length,
+      total: processedItems.length,
+      status: 'Compression de l’archive ZIP…',
+      percent: 0,
     });
+    await yieldToPaint();
 
-    const content = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(content);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `penl_img_${selectedTool || 'export'}_${processedItems.length}.zip`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    try {
+      const zip = new JSZip();
+      processedItems.forEach((it) => {
+        const path = it.outputFileName || it.file.name;
+        zip.file(path, it.processedBlob!);
+      });
+
+      const content = await zip.generateAsync({ type: 'blob' }, (meta) => {
+        setBatchProgress({
+          current: processedItems.length,
+          total: processedItems.length,
+          status: `Création de l’archive ZIP (${Math.round(meta.percent)}%)…`,
+          percent: Math.round(meta.percent),
+        });
+      });
+
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `penl_img_${selectedTool || 'export'}_${processedItems.length}.zip`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      showNotice('success', `Archive ZIP téléchargée (${processedItems.length} fichiers).`);
+    } catch (err: any) {
+      showNotice('error', 'Erreur lors de la génération du ZIP : ' + (err?.message || err));
+    } finally {
+      setIsBatchProcessing(false);
+    }
   };
 
   const handleExportToLocalFolder = async () => {
@@ -899,7 +767,10 @@ export function App() {
     if (processedItems.length === 0) return;
 
     if (!('showDirectoryPicker' in window)) {
-      alert("Votre navigateur ne supporte pas l'écriture directe. Utilisez le bouton ZIP.");
+      showNotice(
+        'warning',
+        'Votre navigateur ne supporte pas l’écriture directe dans un dossier. Utilisez le bouton ZIP.'
+      );
       return;
     }
 
@@ -920,10 +791,13 @@ export function App() {
         await writable.write(it.processedBlob!);
         await writable.close();
       }
-      alert(`${processedItems.length} image(s) enregistrée(s) directement dans votre dossier.`);
+      showNotice(
+        'success',
+        `${processedItems.length} image${processedItems.length > 1 ? 's' : ''} enregistrée${processedItems.length > 1 ? 's' : ''} dans votre dossier local.`
+      );
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
-        alert('Erreur : ' + (err?.message || err));
+        showNotice('error', 'Erreur lors de l’enregistrement : ' + (err?.message || err));
       }
     }
   };
@@ -950,7 +824,7 @@ export function App() {
     [updateItem, handleProcessSingle]
   );
 
-  // Global Paste (Cmd+V / Ctrl+V) support to load image from clipboard anywhere
+  // Global Paste (Cmd+V / Ctrl+V) support
   useEffect(() => {
     const onPaste = async (e: ClipboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -984,15 +858,15 @@ export function App() {
     isVeolTool ||
     selectedTool === 'crop' ||
     (selectedTool === 'veol-article' && config.cropPreset !== 'none');
-  const parsedCropAspectRatio: number | null =
-    isVeolTool
-      ? config.targetWidth / config.targetHeight
-      : config.cropPreset !== 'none' && config.cropPreset !== 'custom'
-      ? (() => {
-          const [rw, rh] = config.cropPreset.split(':').map(Number);
-          return rw / rh;
-        })()
-      : null;
+  const parsedCropAspectRatio: number | null = isVeolTool
+    ? config.targetWidth / config.targetHeight
+    : config.cropPreset !== 'none' && config.cropPreset !== 'custom'
+    ? (() => {
+        const [rw, rh] = config.cropPreset.split(':').map(Number);
+        return rw / rh;
+      })()
+    : null;
+
   const activeToolMeta = ALL_TOOLS.find((t) => t.id === selectedTool) || null;
   const doneItems = items.filter((i) => i.status === 'done' && i.processedSize !== undefined);
   const totalOriginalOfDone = doneItems.reduce((acc, i) => acc + i.originalSize, 0);
@@ -1002,13 +876,25 @@ export function App() {
       ? Math.round(((totalOriginalOfDone - totalProcessedBytes) / totalOriginalOfDone) * 100)
       : 0;
 
-  const inspectedItem = items.find((i) => i.id === inspectedId) || null;
+  const hasStaleItems = items.some(
+    (it) =>
+      it.status === 'done' &&
+      Boolean(it.processedConfigSig) &&
+      it.processedConfigSig !== currentConfigSig
+  );
 
-  const firstItem = items[0];
-  const previewHeightForWidthOnly =
-    firstItem && config.targetWidth
-      ? Math.round((config.targetWidth * firstItem.originalHeight) / firstItem.originalWidth)
-      : null;
+  const inspectedIndex = items.findIndex((i) => i.id === inspectedId);
+  const inspectedItem = inspectedIndex >= 0 ? items[inspectedIndex] : null;
+  const dropzoneCopy = getDropzoneCopyForTool(selectedTool, config);
+
+  const handleNavigateInspector = useCallback(
+    (delta: -1 | 1) => {
+      if (items.length <= 1 || inspectedIndex < 0) return;
+      const nextIdx = (inspectedIndex + delta + items.length) % items.length;
+      setInspectedId(items[nextIdx].id);
+    },
+    [items, inspectedIndex]
+  );
 
   const activeProgress: ActivityProgress = uploadProgress.active
     ? uploadProgress
@@ -1024,7 +910,9 @@ export function App() {
         current: batchProgress.current,
         total: batchProgress.total,
         percent:
-          batchProgress.total > 0
+          batchProgress.percent !== undefined
+            ? batchProgress.percent
+            : batchProgress.total > 0
             ? Math.round((batchProgress.current / batchProgress.total) * 100)
             : undefined,
       }
@@ -1037,18 +925,29 @@ export function App() {
         total: 0,
       };
 
+  const handleCancelActiveTask = () => {
+    cancelOperationRef.current = true;
+  };
+
   return (
     <div
-      onDragOver={(e) => {
+      onDragEnter={(e) => {
         e.preventDefault();
+        dragDepthRef.current++;
         setIsDraggingOver(true);
       }}
+      onDragOver={(e) => {
+        e.preventDefault();
+      }}
       onDragLeave={(e) => {
-        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-        setIsDraggingOver(false);
+        e.preventDefault();
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+        if (dragDepthRef.current === 0) {
+          setIsDraggingOver(false);
+        }
       }}
       onDrop={handleDrop}
-      className="min-h-screen flex flex-col bg-[#FAF8F5] text-stone-900"
+      className="min-h-screen flex flex-col bg-[#FAF8F5] text-stone-900 relative"
     >
       {/* Hidden File & Folder inputs */}
       <input
@@ -1068,269 +967,64 @@ export function App() {
         className="hidden"
       />
 
-      {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-20 border-b border-stone-200/90 bg-[#FAF8F5]/90 backdrop-blur-md">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 shrink-0">
-            <button
-              type="button"
-              onClick={() => selectTool(null)}
-              className="flex items-center gap-2.5 group text-left shrink-0 whitespace-nowrap"
-            >
-              <div className="w-8 h-8 rounded-lg bg-stone-900 text-white flex items-center justify-center font-mono font-bold text-sm shadow-tactile group-hover:bg-orange-600 transition-colors shrink-0">
-                P.
-              </div>
-              <div className="flex items-baseline whitespace-nowrap shrink-0">
-                <span className="font-display font-extrabold tracking-tight text-base text-stone-900 whitespace-nowrap">
-                  Penl.img
-                </span>
-                <span className="hidden sm:inline-block ml-1.5 font-mono text-[11px] text-stone-500 whitespace-nowrap">
-                  local
-                </span>
-              </div>
-            </button>
-
-            {selectedTool && (
-              <div className="hidden lg:flex items-center gap-1 pl-3 border-l border-stone-300">
-                {ALL_TOOLS.map((t) =>
-                  t.externalUrl ? (
-                    <a
-                      key={t.id}
-                      href={t.externalUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-stone-600 hover:text-stone-900 hover:bg-stone-200/60 transition"
-                      title="Ouvrir QrCode dans un nouvel onglet"
-                    >
-                      <span>QrCode</span>
-                      <ExternalLink className="w-3 h-3 text-stone-400" />
-                    </a>
-                  ) : (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => selectTool(t.id)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition cursor-pointer ${
-                        selectedTool === t.id
-                          ? 'bg-stone-900 text-white shadow-sm'
-                          : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
-                      }`}
-                    >
-                      {t.id === 'resize-compress'
-                        ? 'Resize & Compresser'
-                        : t.id === 'veol-thumb'
-                        ? 'Miniature VEOL'
-                        : t.id === 'veol-banner'
-                        ? 'Bannière VEOL'
-                        : t.id === 'veol-article'
-                        ? 'Article VEOL'
-                        : t.id === 'mockup'
-                        ? 'Mockups'
-                        : t.id === 'logo-white'
-                        ? 'Logo Blanc'
-                        : t.id === 'qrcode'
-                        ? 'QrCode'
-                        : t.title.split(' ')[0]}
-                    </button>
-                  )
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-            {items.length > 0 && !selectedTool && (
-              <span className="font-mono text-xs px-2.5 py-1 rounded-full bg-orange-100 text-orange-800 border border-orange-200 font-medium whitespace-nowrap">
-                {items.length} fichier{items.length > 1 ? 's' : ''} chargé{items.length > 1 ? 's' : ''}
+      {/* Global Drag & Drop Full-Screen Overlay */}
+      {isDraggingOver && (
+        <div className="fixed inset-0 z-50 pointer-events-none bg-stone-900/55 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="bg-white rounded-3xl border-2 border-dashed border-orange-500 shadow-2xl px-10 py-8 text-center max-w-md space-y-2.5">
+            <div className="w-14 h-14 rounded-2xl bg-orange-600 text-white flex items-center justify-center mx-auto shadow-lg">
+              <Upload className="w-7 h-7" />
+            </div>
+            <h2 className="font-display text-xl font-extrabold text-stone-900">
+              Déposez vos images ici
+            </h2>
+            <p className="text-xs text-stone-600 leading-relaxed">
+              {activeToolMeta
+                ? `Ajout immédiat dans « ${activeToolMeta.title} »`
+                : 'Ouverture automatique dans « Redimensionner & Compresser »'}
+              <br />
+              <span className="font-mono text-[11px] text-stone-400">
+                HEIC/HEIF iPhone • JPG • PNG • WebP • SVG • Dossiers complets
               </span>
-            )}
-            <button
-              type="button"
-              onClick={() => setIsLegalModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-600/20 text-emerald-800 font-mono text-[11px] font-medium transition whitespace-nowrap cursor-pointer"
-              title="Architecture 100% Locale • Voir les mentions légales & confidentialité"
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              100% LOCAL • ZERO UPLOAD
-            </button>
+            </p>
           </div>
         </div>
-      </header>
+      )}
+
+      {/* Top Navigation Bar */}
+      <HeaderNav
+        selectedTool={selectedTool}
+        itemsCount={items.length}
+        onRequestSelectTool={handleRequestSelectTool}
+        onOpenLegal={() => setIsLegalModalOpen(true)}
+      />
 
       {/* VIEW 1: GOAL-ORIENTED HOME HUB */}
       {!selectedTool ? (
-        <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-10 md:py-14 flex flex-col justify-between">
-          <div className="space-y-8">
-            {/* Hero Header */}
-            <div className="max-w-2xl">
-              <div className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-orange-600 font-semibold mb-2.5">
-                <span>[ PENL.IMG — SUITE IMAGE LOCALE ]</span>
-              </div>
-              <h1 className="font-display text-3xl sm:text-5xl font-extrabold tracking-tight text-stone-900 leading-[1.12]">
-                Quel résultat voulez-vous obtenir ?
-              </h1>
-              <p className="text-stone-600 text-base mt-2.5 leading-relaxed">
-                Sélectionnez un outil ou glissez directement un dossier d'images. Aucune donnée ne quitte votre navigateur.
-              </p>
-            </div>
-
-            {/* VEOL Quick Format Tiles (3 compact tiles) */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-stone-400">
-                  Formats rapides VEOL (72 ppp auto)
-                </span>
-                <div className="h-px flex-1 bg-stone-200" />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                {VEOL_TOOLS.map((tool) => (
-                  <button
-                    key={tool.id}
-                    type="button"
-                    onClick={() => selectTool(tool.id)}
-                    className={`group text-left bg-white rounded-2xl p-4 px-5 border border-stone-200/90 ${tool.accentBorder} shadow-tactile hover:shadow-tactile-lg hover:-translate-y-0.5 transition-all flex items-center justify-between gap-4`}
-                  >
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <div
-                        className={`w-10 h-10 rounded-xl ${tool.accentBg} ${tool.accentText} flex items-center justify-center shrink-0 transition-transform group-hover:scale-105`}
-                      >
-                        {tool.icon}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h2 className="font-display text-base font-bold text-stone-900 group-hover:text-orange-600 transition-colors">
-                            {tool.title}
-                          </h2>
-                          <span className="font-mono text-[10px] font-semibold px-2 py-0.5 rounded bg-stone-100 text-stone-600 border border-stone-200">
-                            {tool.badge}
-                          </span>
-                        </div>
-                        <p className="text-xs text-stone-500 mt-0.5 truncate">{tool.subtitle}</p>
-                      </div>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-stone-400 group-hover:text-orange-600 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Main Bento Grid of Goal Cards */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-stone-400">
-                  Outils standards & traitement par lot
-                </span>
-                <div className="h-px flex-1 bg-stone-200" />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {MAIN_TOOLS.map((tool) => {
-                  const CardComponent = tool.externalUrl ? 'a' : 'button';
-                  const cardProps = tool.externalUrl
-                    ? {
-                        href: tool.externalUrl,
-                        target: '_blank',
-                        rel: 'noopener noreferrer',
-                      }
-                    : {
-                        type: 'button' as const,
-                        onClick: () => selectTool(tool.id),
-                      };
-
-                  return (
-                    <CardComponent
-                      key={tool.id}
-                      {...cardProps}
-                      className={`group text-left bg-white rounded-2xl p-6 border border-stone-200/90 ${
-                        tool.accentBorder
-                      } shadow-tactile hover:shadow-tactile-lg hover:-translate-y-0.5 transition-all flex flex-col justify-between min-h-[185px] cursor-pointer ${
-                        tool.twoColumns
-                          ? 'col-span-1 sm:col-span-2 lg:col-span-2 bg-gradient-to-r from-white via-cyan-50/20 to-white'
-                          : tool.fullWidth
-                          ? 'col-span-1 sm:col-span-2 lg:col-span-3 bg-gradient-to-r from-white via-cyan-50/20 to-white'
-                          : tool.featured
-                          ? 'sm:col-span-2 lg:col-span-2 bg-gradient-to-br from-white to-orange-50/40'
-                          : tool.externalUrl
-                          ? 'col-span-1 sm:col-span-2 lg:col-span-1 bg-gradient-to-br from-white to-emerald-50/20'
-                          : ''
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-4">
-                          <span className="font-mono text-[11px] font-semibold tracking-wider text-stone-400">
-                            {tool.badge}
-                          </span>
-                          <div
-                            className={`w-10 h-10 rounded-xl ${tool.accentBg} ${tool.accentText} flex items-center justify-center transition-transform group-hover:scale-110`}
-                          >
-                            {tool.icon}
-                          </div>
-                        </div>
-
-                        <h2 className="font-display text-xl sm:text-2xl font-bold text-stone-900 group-hover:text-orange-600 transition-colors flex items-center gap-2">
-                          <span>{tool.title}</span>
-                          {tool.externalUrl && (
-                            <ExternalLink className="w-4 h-4 text-stone-400 group-hover:text-emerald-600 transition-colors shrink-0" />
-                          )}
-                        </h2>
-                        <p className="text-xs sm:text-sm text-stone-500 mt-1.5 leading-relaxed max-w-xl">
-                          {tool.subtitle}
-                        </p>
-                      </div>
-
-                      <div className="mt-5 pt-3 border-t border-stone-100 flex items-center justify-between text-xs font-semibold text-stone-800">
-                        <span>{tool.externalUrl ? 'Accéder au générateur' : "Ouvrir l'outil"}</span>
-                        {tool.externalUrl ? (
-                          <ExternalLink className="w-4 h-4 text-stone-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-                        ) : (
-                          <ArrowRight className="w-4 h-4 text-stone-400 group-hover:text-orange-600 group-hover:translate-x-1 transition-all" />
-                        )}
-                      </div>
-                    </CardComponent>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <footer className="mt-14 pt-6 border-t border-stone-200/80 flex flex-wrap items-center justify-between gap-4 text-xs text-stone-500 font-mono">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Penl.img</span>
-            </div>
-            <div>
-              <button
-                type="button"
-                onClick={() => setIsLegalModalOpen(true)}
-                className="hover:text-stone-900 underline underline-offset-2 transition cursor-pointer"
-              >
-                Mentions légales & Confidentialité (100% Local)
-              </button>
-            </div>
-          </footer>
-        </main>
+        <HomeHub
+          onSelectTool={(id) => applyToolSelectionImmediate(id)}
+          onOpenLegal={() => setIsLegalModalOpen(true)}
+        />
       ) : (
         /* VIEW 2: FOCUSED SINGLE-RESULT WORKSPACE */
-        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 flex flex-col gap-6">
-          {/* Top Breadcrumb + Tool Title */}
+        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 flex flex-col gap-5">
+          {/* Top Breadcrumb + Tool Title + File Actions */}
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={() => selectTool(null)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-stone-200 hover:bg-stone-100 text-xs font-semibold text-stone-700 shadow-tactile transition"
+                onClick={() => handleRequestSelectTool(null)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-stone-200 hover:bg-stone-100 text-xs font-semibold text-stone-700 shadow-tactile transition cursor-pointer"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 Tous les outils
               </button>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="font-display text-2xl font-extrabold text-stone-900">
-                    {activeToolMeta?.title}
-                  </h1>
-                  <span className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-stone-200/80 text-stone-600">
-                    {activeToolMeta?.badge}
-                  </span>
-                </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="font-display text-2xl font-extrabold text-stone-900">
+                  {activeToolMeta?.title}
+                </h1>
+                <span className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-stone-200/80 text-stone-600">
+                  {activeToolMeta?.badge}
+                </span>
               </div>
             </div>
 
@@ -1339,7 +1033,7 @@ export function App() {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-3 py-1.5 rounded-xl bg-white border border-stone-200 hover:bg-stone-100 text-xs font-semibold text-stone-700 flex items-center gap-1.5"
+                  className="px-3 py-1.5 rounded-xl bg-white border border-stone-200 hover:bg-stone-100 text-xs font-semibold text-stone-700 flex items-center gap-1.5 cursor-pointer"
                 >
                   <ImagePlus className="w-3.5 h-3.5" />
                   Ajouter Images
@@ -1348,7 +1042,7 @@ export function App() {
                   <button
                     type="button"
                     onClick={() => folderInputRef.current?.click()}
-                    className="px-3 py-1.5 rounded-xl bg-white border border-stone-200 hover:bg-stone-100 text-xs font-semibold text-stone-700 flex items-center gap-1.5"
+                    className="px-3 py-1.5 rounded-xl bg-white border border-stone-200 hover:bg-stone-100 text-xs font-semibold text-stone-700 flex items-center gap-1.5 cursor-pointer"
                   >
                     <FolderUp className="w-3.5 h-3.5" />
                     Ajouter Dossier
@@ -1356,8 +1050,8 @@ export function App() {
                 )}
                 <button
                   type="button"
-                  onClick={clearAll}
-                  className="p-1.5 rounded-xl bg-white border border-stone-200 hover:bg-rose-50 hover:border-rose-200 text-stone-400 hover:text-rose-600 transition"
+                  onClick={purgeItemsFromMemory}
+                  className="p-1.5 rounded-xl bg-white border border-stone-200 hover:bg-rose-50 hover:border-rose-200 text-stone-400 hover:text-rose-600 transition cursor-pointer"
                   title="Tout effacer"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -1366,1226 +1060,110 @@ export function App() {
             )}
           </div>
 
-          {/* FOCUSED COMMAND BAR */}
-          <section className="bg-white rounded-2xl border border-stone-200/90 shadow-tactile p-5">
-            {/* 1. UNIFIED RESIZE & COMPRESS WORKSPACE (Dimensions + Quality % integrated together) */}
-            {selectedTool === 'resize-compress' && (
-              <div className="space-y-5">
-                <div className="rounded-xl bg-[#FAF8F5] border border-stone-200/90 p-5 space-y-5">
-                  {/* Top Row: Mode selector + Ratio Lock badge */}
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-mono text-xs font-bold uppercase tracking-wider text-stone-500 mr-2 flex items-center gap-1.5">
-                        <Maximize2 className="w-3.5 h-3.5 text-orange-600" />
-                        Dimensions :
-                      </span>
-                      {[
-                        { id: 'width-only', label: 'Largeur cible (px)' },
-                        { id: 'max-side', label: 'Bord max (px)' },
-                        { id: 'percentage', label: 'Échelle (%)' },
-                        { id: 'none', label: 'Taille originale' },
-                      ].map((m) => (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => updateConfig({ resizeMode: m.id as ResizeMode })}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
-                            config.resizeMode === m.id
-                              ? 'bg-stone-900 text-white border-stone-900 shadow-sm'
-                              : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-100'
-                          }`}
-                        >
-                          {m.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <span className="inline-flex items-center gap-1 font-mono text-[11px] px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-800 font-semibold">
-                      <Lock className="w-3 h-3" /> Ratio garanti
-                    </span>
-                  </div>
-
-                  {/* Middle Row: Dimensions input + Integrated Quality % slider side-by-side */}
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pt-2 border-t border-stone-200/70 items-center">
-                    {/* Dimensions Control (7 cols) */}
-                    <div className="lg:col-span-7 space-y-2.5">
-                      {config.resizeMode === 'width-only' && (
-                        <>
-                          <div className="flex flex-wrap items-center gap-2.5">
-                            <label className="text-xs font-semibold text-stone-700">
-                              Largeur cible :
-                            </label>
-                            <div className="flex items-center">
-                              <input
-                                type="number"
-                                min={16}
-                                max={16000}
-                                value={config.targetWidth || ''}
-                                onChange={(e) =>
-                                  updateConfig({
-                                    targetWidth: Math.max(1, Number(e.target.value)),
-                                    lockAspectRatio: true,
-                                  })
-                                }
-                                className="w-28 rounded-xl bg-white border border-stone-300 px-3 py-1.5 font-mono text-sm font-bold text-stone-900 focus:border-orange-500 focus:outline-none"
-                              />
-                              <span className="ml-1.5 font-mono text-xs text-stone-500">px</span>
-                            </div>
-
-                            <span className="font-mono text-[11px] text-stone-500 bg-stone-200/70 px-2.5 py-1 rounded-lg">
-                              Hauteur : Auto{' '}
-                              {previewHeightForWidthOnly ? `(${previewHeightForWidthOnly}px)` : ''}
-                            </span>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {[600, 800, 1080, 1280, 1920, 2560].map((w) => (
-                              <button
-                                key={w}
-                                type="button"
-                                onClick={() =>
-                                  updateConfig({ targetWidth: w, lockAspectRatio: true })
-                                }
-                                className={`font-mono text-[11px] px-2.5 py-1 rounded-md border transition ${
-                                  config.targetWidth === w
-                                    ? 'bg-orange-500/15 border-orange-500 text-orange-800 font-bold'
-                                    : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-100'
-                                }`}
-                              >
-                                {w}px
-                              </button>
-                            ))}
-                          </div>
-                        </>
-                      )}
-
-                      {config.resizeMode === 'max-side' && (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-stone-700">
-                              Côté le plus long :
-                            </span>
-                            <input
-                              type="number"
-                              value={config.maxSidePx}
-                              onChange={(e) => updateConfig({ maxSidePx: Number(e.target.value) })}
-                              className="w-28 rounded-xl bg-white border border-stone-300 px-3 py-1.5 font-mono text-sm font-bold"
-                            />
-                            <span className="font-mono text-xs text-stone-500">px</span>
-                          </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {[800, 1280, 1600, 1920, 2560].map((px) => (
-                              <button
-                                key={px}
-                                type="button"
-                                onClick={() => updateConfig({ maxSidePx: px })}
-                                className={`font-mono text-[11px] px-2.5 py-1 rounded-md border ${
-                                  config.maxSidePx === px
-                                    ? 'bg-orange-500/15 border-orange-500 text-orange-800 font-bold'
-                                    : 'bg-white border-stone-200 text-stone-600'
-                                }`}
-                              >
-                                {px}px
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {config.resizeMode === 'percentage' && (
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs font-semibold text-stone-700">Échelle :</span>
-                          <input
-                            type="range"
-                            min={10}
-                            max={100}
-                            step={5}
-                            value={config.scalePercentage}
-                            onChange={(e) =>
-                              updateConfig({ scalePercentage: Number(e.target.value) })
-                            }
-                            className="flex-1 accent-stone-900"
-                          />
-                          <span className="font-mono text-sm font-bold text-orange-600 w-12 text-right">
-                            {config.scalePercentage}%
-                          </span>
-                        </div>
-                      )}
-
-                      {config.resizeMode === 'none' && (
-                        <p className="text-xs text-stone-500">
-                          Dimensions originales conservées. Seule la compression sera appliquée.
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Integrated Compression Control (5 cols) */}
-                    <div className="lg:col-span-5 lg:border-l lg:border-stone-200/80 lg:pl-5 space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-stone-500 flex items-center gap-1.5">
-                          <Sliders className="w-3.5 h-3.5 text-stone-700" />
-                          Compression :
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => updateConfig({ compressionMode: 'quality' })}
-                            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${
-                              config.compressionMode === 'quality'
-                                ? 'bg-stone-900 text-white'
-                                : 'text-stone-500 hover:bg-stone-200/60'
-                            }`}
-                          >
-                            Qualité %
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => updateConfig({ compressionMode: 'target-size' })}
-                            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${
-                              config.compressionMode === 'target-size'
-                                ? 'bg-stone-900 text-white'
-                                : 'text-stone-500 hover:bg-stone-200/60'
-                            }`}
-                          >
-                            Poids cible (Ko)
-                          </button>
-                        </div>
-                      </div>
-
-                      {config.compressionMode === 'quality' ? (
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="range"
-                              min={15}
-                              max={100}
-                              value={config.quality}
-                              onChange={(e) => updateConfig({ quality: Number(e.target.value) })}
-                              className="flex-1 accent-stone-900"
-                            />
-                            <span className="font-mono text-xs font-bold text-stone-900 bg-white border border-stone-300 px-2.5 py-1 rounded-lg min-w-[48px] text-center">
-                              {config.quality}%
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-[10px] font-mono text-stone-400">
-                            <span>Allégé (60%)</span>
-                            <span>Standard (85%)</span>
-                            <span>Max (100%)</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-stone-600">Max :</span>
-                            <input
-                              type="number"
-                              min={10}
-                              max={20000}
-                              step={10}
-                              value={config.targetFileSizeKb || ''}
-                              onChange={(e) =>
-                                updateConfig({
-                                  targetFileSizeKb: Math.max(5, Number(e.target.value)),
-                                })
-                              }
-                              className="w-24 rounded-xl bg-white border border-stone-300 px-2.5 py-1 font-mono text-sm font-bold text-stone-900"
-                            />
-                            <span className="font-mono text-xs text-stone-500">Ko</span>
-                            <div className="flex gap-1 ml-auto">
-                              {[150, 300, 500, 1024].map((kb) => (
-                                <button
-                                  key={kb}
-                                  type="button"
-                                  onClick={() => updateConfig({ targetFileSizeKb: kb })}
-                                  className={`font-mono text-[10px] px-1.5 py-0.5 rounded border ${
-                                    config.targetFileSizeKb === kb
-                                      ? 'bg-stone-900 text-white border-stone-900'
-                                      : 'bg-white border-stone-200 text-stone-600'
-                                  }`}
-                                >
-                                  {kb === 1024 ? '1Mo' : `${kb}K`}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Bottom Bar: Output Format (JPG default, no "Recommandé" on WebP) + Optional EXIF toggle + Run Button */}
-                <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
-                  <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                      <span className="font-mono font-semibold text-stone-500 mr-1">FORMAT :</span>
-                      {[
-                        { id: 'image/jpeg', label: 'JPG' },
-                        { id: 'original', label: 'Format d’origine' },
-                        { id: 'image/png', label: 'PNG' },
-                        { id: 'image/webp', label: 'WebP' },
-                      ].map((f) => (
-                        <button
-                          key={f.id}
-                          type="button"
-                          onClick={() => updateConfig({ outputFormat: f.id as OutputFormat })}
-                          className={`px-2.5 py-1 rounded-lg font-medium border transition ${
-                            config.outputFormat === f.id
-                              ? 'bg-stone-900 text-white border-stone-900'
-                              : 'bg-[#FAF8F5] border-stone-200 text-stone-700 hover:bg-stone-100'
-                          }`}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <label className="flex items-center gap-2 text-xs text-stone-600 cursor-pointer select-none border-l border-stone-200 pl-4">
-                      <input
-                        type="checkbox"
-                        checked={config.stripMetadata}
-                        onChange={(e) => updateConfig({ stripMetadata: e.target.checked })}
-                        className="rounded accent-stone-900"
-                      />
-                      <span>Supprimer les métadonnées EXIF / GPS</span>
-                    </label>
-                  </div>
-
-                  <ActionApplyButton
-                    count={items.length}
-                    isProcessing={isBatchProcessing}
-                    status={batchProgress.status}
-                    label="Redimensionner & Compresser"
-                    onClick={handleProcessAll}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* VEOL MINIATURE (360x210) & VEOL BANNIERE (964x140) WORKSPACE */}
-            {isVeolTool && (
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
-                <div className="space-y-3 flex-1">
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <span className="inline-flex items-center gap-1.5 font-mono text-xs font-bold px-3 py-1.5 rounded-xl bg-stone-900 text-white">
-                      {selectedTool === 'veol-thumb' ? (
-                        <LayoutTemplate className="w-3.5 h-3.5 text-orange-400" />
-                      ) : (
-                        <RectangleHorizontal className="w-3.5 h-3.5 text-orange-400" />
-                      )}
-                      {config.targetWidth} × {config.targetHeight} px
-                    </span>
-
-                    <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-800 border border-emerald-500/20">
-                      <Check className="w-3.5 h-3.5" /> 72 ppp (DPI) auto
-                    </span>
-
-                    <div className="flex items-center gap-2 ml-2">
-                      <span className="text-xs text-stone-600 font-medium">Qualité JPG :</span>
-                      <input
-                        type="range"
-                        min={50}
-                        max={100}
-                        value={config.quality}
-                        onChange={(e) => updateConfig({ quality: Number(e.target.value) })}
-                        className="w-24 accent-stone-900"
-                      />
-                      <span className="font-mono text-xs font-bold text-stone-800">
-                        {config.quality}%
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-4 text-xs text-stone-600">
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(config.renameSuffix)}
-                        onChange={(e) =>
-                          updateConfig({
-                            renameSuffix: e.target.checked
-                              ? selectedTool === 'veol-thumb'
-                                ? '_miniature_360x210'
-                                : '_banniere_964x140'
-                              : '',
-                          })
-                        }
-                        className="rounded accent-stone-900"
-                      />
-                      <span>
-                        Ajouter le suffixe{' '}
-                        <code className="font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-800">
-                          {selectedTool === 'veol-thumb'
-                            ? '_miniature_360x210'
-                            : '_banniere_964x140'}
-                        </code>
-                      </span>
-                    </label>
-
-                    <label className="flex items-center gap-2 cursor-pointer select-none border-l border-stone-200 pl-4">
-                      <input
-                        type="checkbox"
-                        checked={config.stripMetadata}
-                        onChange={(e) => updateConfig({ stripMetadata: e.target.checked })}
-                        className="rounded accent-stone-900"
-                      />
-                      <span>Supprimer EXIF</span>
-                    </label>
-                  </div>
-                </div>
-
-                <ActionApplyButton
-                  count={items.length}
-                  isProcessing={isBatchProcessing}
-                  status={batchProgress.status}
-                  icon={<Download className="w-4 h-4" />}
-                  label={
-                    selectedTool === 'veol-thumb'
-                      ? items.length > 1
-                        ? 'Télécharger miniatures'
-                        : 'Télécharger miniature'
-                      : items.length > 1
-                      ? 'Télécharger bannières'
-                      : 'Télécharger bannière'
-                  }
-                  onClick={handleVeolDownload}
-                />
-              </div>
-            )}
-
-            {/* VEOL IMAGE ARTICLE (Max 1280px width, optional crop, 72 ppp auto, batch enabled) */}
-            {selectedTool === 'veol-article' && (
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <span className="inline-flex items-center gap-1.5 font-mono text-xs font-bold px-3 py-1.5 rounded-xl bg-stone-900 text-white">
-                      <FileImage className="w-3.5 h-3.5 text-emerald-400" />
-                      Largeur max ≤ {config.targetWidth} px
-                    </span>
-
-                    <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-800 border border-emerald-500/20">
-                      <Check className="w-3.5 h-3.5" /> 72 ppp (DPI) auto
-                    </span>
-
-                    <div className="flex items-center gap-2 ml-1">
-                      <span className="text-xs text-stone-600 font-medium">Qualité JPG :</span>
-                      <input
-                        type="range"
-                        min={50}
-                        max={100}
-                        value={config.quality}
-                        onChange={(e) => updateConfig({ quality: Number(e.target.value) })}
-                        className="w-24 accent-stone-900"
-                      />
-                      <span className="font-mono text-xs font-bold text-stone-800">
-                        {config.quality}%
-                      </span>
-                    </div>
-                  </div>
-
-                  <ActionApplyButton
-                    count={items.length}
-                    isProcessing={isBatchProcessing}
-                    status={batchProgress.status}
-                    label="Optimiser pour article VEOL"
-                    onClick={handleProcessAll}
-                  />
-                </div>
-
-                {/* Crop Options Bar for Article VEOL */}
-                <div className="pt-3 border-t border-stone-100 flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs font-semibold text-stone-500 mr-1 flex items-center gap-1">
-                      <Crop className="w-3.5 h-3.5 text-stone-600" /> CADRAGE / CROP :
-                    </span>
-                    {[
-                      { id: 'none', label: 'Sans crop (Original)' },
-                      { id: '16:9', label: '16:9 Paysage' },
-                      { id: '4:3', label: '4:3 Photo' },
-                      { id: '3:2', label: '3:2 Reflex' },
-                      { id: '1:1', label: '1:1 Carré' },
-                      { id: 'custom', label: 'Zone libre' },
-                    ].map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => updateConfig({ cropPreset: c.id as CropPreset })}
-                        className={`px-3 py-1 rounded-xl text-xs font-semibold border transition ${
-                          config.cropPreset === c.id
-                            ? 'bg-stone-900 text-white border-stone-900 shadow-sm'
-                            : 'bg-[#FAF8F5] text-stone-700 border-stone-200 hover:bg-stone-100'
-                        }`}
-                      >
-                        {c.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-4 text-xs text-stone-600">
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(config.renameSuffix)}
-                        onChange={(e) =>
-                          updateConfig({
-                            renameSuffix: e.target.checked ? '_article_1280' : '',
-                          })
-                        }
-                        className="rounded accent-stone-900"
-                      />
-                      <span>
-                        Suffixe{' '}
-                        <code className="font-mono bg-stone-100 px-1.5 py-0.5 rounded text-stone-800">
-                          _article_1280
-                        </code>
-                      </span>
-                    </label>
-
-                    <label className="flex items-center gap-2 cursor-pointer select-none border-l border-stone-200 pl-4">
-                      <input
-                        type="checkbox"
-                        checked={config.stripMetadata}
-                        onChange={(e) => updateConfig({ stripMetadata: e.target.checked })}
-                        className="rounded accent-stone-900"
-                      />
-                      <span>Supprimer EXIF</span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 2. CONVERT FORMAT CONTROLS */}
-            {selectedTool === 'convert' && (
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
-                <div className="space-y-3 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs font-semibold text-stone-500 mr-1">
-                      CONVERTIR VERS :
-                    </span>
-                    {[
-                      { id: 'image/jpeg', label: 'JPG', desc: 'Format photo standard' },
-                      { id: 'image/png', label: 'PNG', desc: 'Sans perte / Transparence' },
-                      { id: 'image/webp', label: 'WEBP', desc: 'Format Web' },
-                      { id: 'image/avif', label: 'AVIF', desc: 'Compression avancée' },
-                    ].map((f) => (
-                      <button
-                        key={f.id}
-                        type="button"
-                        onClick={() => updateConfig({ outputFormat: f.id as OutputFormat })}
-                        className={`px-4 py-2 rounded-xl border text-left transition ${
-                          config.outputFormat === f.id
-                            ? 'bg-stone-900 text-white border-stone-900 shadow-sm'
-                            : 'bg-[#FAF8F5] text-stone-800 border-stone-200 hover:bg-stone-100'
-                        }`}
-                      >
-                        <div className="font-mono text-xs font-bold">{f.label}</div>
-                        <div
-                          className={`text-[10px] ${
-                            config.outputFormat === f.id ? 'text-stone-300' : 'text-stone-400'
-                          }`}
-                        >
-                          {f.desc}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center gap-4 pt-1">
-                    <label className="flex items-center gap-2 text-xs text-stone-600 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={config.stripMetadata}
-                        onChange={(e) => updateConfig({ stripMetadata: e.target.checked })}
-                        className="rounded accent-stone-900"
-                      />
-                      <span>Supprimer les métadonnées EXIF / GPS</span>
-                    </label>
-                  </div>
-                </div>
-
-                <ActionApplyButton
-                  count={items.length}
-                  isProcessing={isBatchProcessing}
-                  status={batchProgress.status}
-                  label="Convertir les fichiers"
-                  onClick={handleProcessAll}
-                />
-              </div>
-            )}
-
-            {/* 3. REMOVE BACKGROUND CONTROLS */}
-            {selectedTool === 'remove-bg' && (
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
-                <div className="space-y-3 flex-1">
-                  <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-semibold text-stone-500">
-                        COULEUR :
-                      </span>
-                      <input
-                        type="color"
-                        value={config.colorKeyHex}
-                        onChange={(e) => updateConfig({ colorKeyHex: e.target.value })}
-                        className="w-8 h-7 rounded cursor-pointer border border-stone-300 bg-white"
-                      />
-                      <span className="font-mono text-xs text-stone-700 uppercase">
-                        {config.colorKeyHex}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-stone-600">Tolérance :</span>
-                      <input
-                        type="range"
-                        min={2}
-                        max={70}
-                        value={config.colorTolerance}
-                        onChange={(e) => updateConfig({ colorTolerance: Number(e.target.value) })}
-                        className="w-28 accent-stone-900"
-                      />
-                      <span className="font-mono text-xs font-bold text-stone-900">
-                        {config.colorTolerance}%
-                      </span>
-                    </div>
-
-                    <label className="flex items-center gap-1.5 text-xs text-stone-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={config.contiguousFloodFill}
-                        onChange={(e) =>
-                          updateConfig({ contiguousFloodFill: e.target.checked })
-                        }
-                        className="rounded accent-stone-900"
-                      />
-                      <span>Bords contigus uniquement</span>
-                    </label>
-
-                    {items.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setInspectedId(items[0].id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-900 text-white hover:bg-stone-800 transition"
-                      >
-                        <Pipette className="w-3.5 h-3.5" /> Pipette sur l'image
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Quick Background Color Replacement */}
-                  <div className="pt-2.5 border-t border-stone-200/80 flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs font-semibold text-stone-500 mr-1 flex items-center gap-1">
-                      NOUVEAU FOND :
-                    </span>
-                    {[
-                      { id: 'transparent', label: 'Transparent (PNG)', dot: 'bg-white border-dashed border-stone-400' },
-                      { id: '#ffffff', label: 'Blanc Pur (#FFF)', dot: 'bg-white border-stone-300 shadow-sm' },
-                      { id: '#f5f5f5', label: 'Gris Studio (#F5)', dot: 'bg-[#f5f5f5] border-stone-300' },
-                      { id: '#1c1917', label: 'Noir Élégant', dot: 'bg-stone-900 border-stone-900' },
-                      { id: '#ea580c', label: 'Orange VEOL', dot: 'bg-orange-600 border-orange-600' },
-                    ].map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() =>
-                          updateConfig({
-                            bgReplaceColor: c.id,
-                            outputFormat: c.id === 'transparent' ? 'image/png' : config.outputFormat,
-                          })
-                        }
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
-                          config.bgReplaceColor === c.id
-                            ? 'bg-stone-900 text-white border-stone-900 shadow-sm'
-                            : 'bg-[#FAF8F5] text-stone-700 border-stone-200 hover:bg-stone-100'
-                        }`}
-                      >
-                        <span className={`w-3 h-3 rounded-full border ${c.dot}`} />
-                        {c.label}
-                      </button>
-                    ))}
-
-                    <div className="flex items-center gap-1.5 ml-1 pl-2 border-l border-stone-200">
-                      <span className="text-xs text-stone-500 font-medium">Couleur perso :</span>
-                      <input
-                        type="color"
-                        value={
-                          config.bgReplaceColor && config.bgReplaceColor !== 'transparent'
-                            ? config.bgReplaceColor
-                            : '#ffffff'
-                        }
-                        onChange={(e) => updateConfig({ bgReplaceColor: e.target.value })}
-                        className="w-7 h-7 rounded cursor-pointer border border-stone-300 bg-white"
-                        title="Choisir une couleur de fond personnalisée"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <ActionApplyButton
-                  count={items.length}
-                  isProcessing={isBatchProcessing}
-                  status={batchProgress.status}
-                  label="Retirer le fond (PNG)"
-                  onClick={handleProcessAll}
-                />
-              </div>
-            )}
-
-            {/* 3b. LOGO EN BLANC (MONOCHROME SILHOUETTE PNG / SVG) */}
-            {selectedTool === 'logo-white' && (
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="space-y-3 flex-1">
-                  {/* Row 1: Silhouette Color Presets */}
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="font-mono text-xs font-semibold text-stone-500 flex items-center gap-1.5">
-                      <Paintbrush className="w-3.5 h-3.5 text-stone-700" />
-                      COULEUR DU LOGO :
-                    </span>
-                    {[
-                      {
-                        hex: '#ffffff',
-                        label: 'Blanc Pur (#FFFFFF)',
-                        dot: 'bg-white border-stone-400 shadow-sm',
-                      },
-                      {
-                        hex: '#000000',
-                        label: 'Noir Pur (#000000)',
-                        dot: 'bg-black border-stone-900',
-                      },
-                      {
-                        hex: '#001a70',
-                        label: 'Bleu EDF (#001A70)',
-                        dot: 'bg-[#001a70] border-[#001a70]',
-                      },
-                      {
-                        hex: '#fe5815',
-                        label: 'Orange EDF (#FE5815)',
-                        dot: 'bg-[#fe5815] border-[#fe5815]',
-                      },
-                    ].map((preset) => (
-                      <button
-                        key={preset.hex}
-                        type="button"
-                        onClick={() => updateConfig({ monochromeColor: preset.hex })}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
-                          config.monochromeColor.toLowerCase() === preset.hex
-                            ? 'bg-stone-900 text-white border-stone-900 shadow-sm'
-                            : 'bg-[#FAF8F5] text-stone-700 border-stone-200 hover:bg-stone-100'
-                        }`}
-                      >
-                        <span className={`w-3 h-3 rounded-full border ${preset.dot}`} />
-                        {preset.label}
-                      </button>
-                    ))}
-
-                    <div className="flex items-center gap-1.5 pl-2 border-l border-stone-200">
-                      <span className="text-xs text-stone-500 font-medium">Autre teinte :</span>
-                      <input
-                        type="color"
-                        value={config.monochromeColor || '#ffffff'}
-                        onChange={(e) => updateConfig({ monochromeColor: e.target.value })}
-                        className="w-7 h-7 rounded cursor-pointer border border-stone-300 bg-white"
-                        title="Choisir une teinte monochrome personnalisée"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Row 2: Auto-strip light background + Tolerance + SVG vector option */}
-                  <div className="pt-2.5 border-t border-stone-200/80 flex flex-wrap items-center gap-4">
-                    <label className="flex items-center gap-2 text-xs text-stone-700 font-medium cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={config.autoStripLightBg}
-                        onChange={(e) => updateConfig({ autoStripLightBg: e.target.checked })}
-                        className="rounded accent-stone-900"
-                      />
-                      <span>Supprimer auto. le fond blanc/clair (conserver fond 100% transparent)</span>
-                    </label>
-
-                    {config.autoStripLightBg && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-stone-500">Seuil de détourage :</span>
-                        <input
-                          type="range"
-                          min={2}
-                          max={60}
-                          value={config.colorTolerance}
-                          onChange={(e) =>
-                            updateConfig({ colorTolerance: Number(e.target.value) })
-                          }
-                          className="w-24 accent-stone-900"
-                        />
-                        <span className="font-mono text-xs font-bold text-stone-900">
-                          {config.colorTolerance}%
-                        </span>
-                      </div>
-                    )}
-
-                    <label className="flex items-center gap-1.5 text-xs text-stone-700 font-medium cursor-pointer pl-2 border-l border-stone-200">
-                      <input
-                        type="checkbox"
-                        checked={config.keepSvgVector}
-                        onChange={(e) => updateConfig({ keepSvgVector: e.target.checked })}
-                        className="rounded accent-stone-900"
-                      />
-                      <span>Conserver le format vectoriel (.SVG) si la source est un SVG</span>
-                    </label>
-
-                    {items.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setInspectedId(items[0].id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-900 text-white hover:bg-stone-800 transition"
-                        title="Cliquer sur une couleur de fond spécifique à retirer"
-                      >
-                        <Pipette className="w-3.5 h-3.5" /> Pipette fond
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <ActionApplyButton
-                  count={items.length}
-                  isProcessing={isBatchProcessing}
-                  status={batchProgress.status}
-                  label="Passer en blanc"
-                  onClick={handleProcessAll}
-                />
-              </div>
-            )}
-
-            {/* 4. CROP & ORIENTATION + OPTIONAL RESIZE & COMPRESS CONTROLS */}
-            {selectedTool === 'crop' && (
-              <div className="space-y-5">
-                {/* Top Block: Crop Ratio & Orientation */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="space-y-3 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-xs font-semibold text-stone-500 mr-1">
-                        RATIO :
-                      </span>
-                      {[
-                        { id: '1:1', label: '1:1 Carré' },
-                        { id: '16:9', label: '16:9 Paysage' },
-                        { id: '4:3', label: '4:3 Photo' },
-                        { id: '3:2', label: '3:2 Reflex' },
-                        { id: '9:16', label: '9:16 Vertical' },
-                        { id: 'none', label: 'Original' },
-                      ].map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => updateConfig({ cropPreset: c.id as CropPreset })}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
-                            config.cropPreset === c.id
-                              ? 'bg-stone-900 text-white border-stone-900'
-                              : 'bg-[#FAF8F5] text-stone-700 border-stone-200 hover:bg-stone-100'
-                          }`}
-                        >
-                          {c.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateConfig({
-                            rotateDeg: (((config.rotateDeg + 90) % 360) as 0 | 90 | 180 | 270),
-                          })
-                        }
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAF8F5] hover:bg-stone-100 border border-stone-200 text-xs font-semibold text-stone-800"
-                      >
-                        <RotateCw className="w-3.5 h-3.5" />
-                        Pivoter 90° ({config.rotateDeg}°)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateConfig({ flipH: !config.flipH })}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold ${
-                          config.flipH
-                            ? 'bg-amber-100 border-amber-300 text-amber-900'
-                            : 'bg-[#FAF8F5] border-stone-200 text-stone-700'
-                        }`}
-                      >
-                        <FlipHorizontal className="w-3.5 h-3.5" /> Miroir H
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateConfig({ flipV: !config.flipV })}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold ${
-                          config.flipV
-                            ? 'bg-amber-100 border-amber-300 text-amber-900'
-                            : 'bg-[#FAF8F5] border-stone-200 text-stone-700'
-                        }`}
-                      >
-                        <FlipVertical className="w-3.5 h-3.5" /> Miroir V
-                      </button>
-                      {items.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setInspectedId(items[0].id)}
-                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-600 hover:underline ml-2"
-                        >
-                          <Crop className="w-3.5 h-3.5" /> Tracer une zone libre à la souris
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Middle Block: Integrated Resize & Compression options */}
-                <div className="rounded-xl bg-[#FAF8F5] border border-stone-200/90 p-4 grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
-                  {/* Resize option (7 cols) */}
-                  <div className="lg:col-span-7 space-y-2.5">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-stone-500 mr-1.5 flex items-center gap-1">
-                        <Maximize2 className="w-3.5 h-3.5 text-orange-600" />
-                        Redimensionner :
-                      </span>
-                      {[
-                        { id: 'none', label: 'Taille du crop' },
-                        { id: 'width-only', label: 'Largeur cible (px)' },
-                        { id: 'max-side', label: 'Bord max (px)' },
-                        { id: 'percentage', label: 'Échelle (%)' },
-                      ].map((m) => (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => updateConfig({ resizeMode: m.id as ResizeMode })}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
-                            config.resizeMode === m.id
-                              ? 'bg-stone-900 text-white border-stone-900 shadow-sm'
-                              : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-100'
-                          }`}
-                        >
-                          {m.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    {config.resizeMode === 'width-only' && (
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        <span className="text-xs text-stone-600">Largeur finale :</span>
-                        <input
-                          type="number"
-                          min={16}
-                          max={16000}
-                          value={config.targetWidth || ''}
-                          onChange={(e) =>
-                            updateConfig({
-                              targetWidth: Math.max(1, Number(e.target.value)),
-                              lockAspectRatio: true,
-                            })
-                          }
-                          className="w-24 rounded-xl bg-white border border-stone-300 px-2.5 py-1 font-mono text-sm font-bold text-stone-900"
-                        />
-                        <span className="font-mono text-xs text-stone-500">px (ratio conservé)</span>
-                        <div className="flex gap-1 ml-1">
-                          {[600, 1080, 1280, 1920].map((w) => (
-                            <button
-                              key={w}
-                              type="button"
-                              onClick={() => updateConfig({ targetWidth: w, lockAspectRatio: true })}
-                              className={`font-mono text-[10px] px-2 py-0.5 rounded border ${
-                                config.targetWidth === w
-                                  ? 'bg-orange-500/15 border-orange-500 text-orange-800 font-bold'
-                                  : 'bg-white border-stone-200 text-stone-600'
-                              }`}
-                            >
-                              {w}px
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {config.resizeMode === 'max-side' && (
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        <span className="text-xs text-stone-600">Bord max :</span>
-                        <input
-                          type="number"
-                          value={config.maxSidePx}
-                          onChange={(e) => updateConfig({ maxSidePx: Number(e.target.value) })}
-                          className="w-24 rounded-xl bg-white border border-stone-300 px-2.5 py-1 font-mono text-sm font-bold"
-                        />
-                        <span className="font-mono text-xs text-stone-500">px</span>
-                      </div>
-                    )}
-
-                    {config.resizeMode === 'percentage' && (
-                      <div className="flex items-center gap-3 pt-1">
-                        <input
-                          type="range"
-                          min={10}
-                          max={100}
-                          step={5}
-                          value={config.scalePercentage}
-                          onChange={(e) => updateConfig({ scalePercentage: Number(e.target.value) })}
-                          className="flex-1 accent-stone-900"
-                        />
-                        <span className="font-mono text-xs font-bold text-orange-600">
-                          {config.scalePercentage}%
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Compression option (5 cols) */}
-                  <div className="lg:col-span-5 lg:border-l lg:border-stone-200/80 lg:pl-5 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-stone-500 flex items-center gap-1">
-                        <Sliders className="w-3.5 h-3.5 text-stone-700" />
-                        Compression :
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => updateConfig({ compressionMode: 'quality' })}
-                          className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${
-                            config.compressionMode === 'quality'
-                              ? 'bg-stone-900 text-white'
-                              : 'text-stone-500 hover:bg-stone-200/60'
-                          }`}
-                        >
-                          Qualité %
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => updateConfig({ compressionMode: 'target-size' })}
-                          className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${
-                            config.compressionMode === 'target-size'
-                              ? 'bg-stone-900 text-white'
-                              : 'text-stone-500 hover:bg-stone-200/60'
-                          }`}
-                        >
-                          Poids cible (Ko)
-                        </button>
-                      </div>
-                    </div>
-
-                    {config.compressionMode === 'quality' ? (
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="range"
-                          min={15}
-                          max={100}
-                          value={config.quality}
-                          onChange={(e) => updateConfig({ quality: Number(e.target.value) })}
-                          className="flex-1 accent-stone-900"
-                        />
-                        <span className="font-mono text-xs font-bold text-stone-900 bg-white border border-stone-300 px-2.5 py-1 rounded-lg min-w-[46px] text-center">
-                          {config.quality}%
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-stone-600">Max :</span>
-                        <input
-                          type="number"
-                          min={10}
-                          max={20000}
-                          step={10}
-                          value={config.targetFileSizeKb || ''}
-                          onChange={(e) =>
-                            updateConfig({
-                              targetFileSizeKb: Math.max(5, Number(e.target.value)),
-                            })
-                          }
-                          className="w-24 rounded-xl bg-white border border-stone-300 px-2.5 py-1 font-mono text-sm font-bold text-stone-900"
-                        />
-                        <span className="font-mono text-xs text-stone-500">Ko</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Bottom Bar: Format + EXIF + Action Button */}
-                <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
-                  <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                      <span className="font-mono font-semibold text-stone-500 mr-1">FORMAT :</span>
-                      {[
-                        { id: 'image/jpeg', label: 'JPG' },
-                        { id: 'original', label: 'Format d’origine' },
-                        { id: 'image/png', label: 'PNG' },
-                        { id: 'image/webp', label: 'WebP' },
-                      ].map((f) => (
-                        <button
-                          key={f.id}
-                          type="button"
-                          onClick={() => updateConfig({ outputFormat: f.id as OutputFormat })}
-                          className={`px-2.5 py-1 rounded-lg font-medium border transition ${
-                            config.outputFormat === f.id
-                              ? 'bg-stone-900 text-white border-stone-900'
-                              : 'bg-[#FAF8F5] border-stone-200 text-stone-700 hover:bg-stone-100'
-                          }`}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <label className="flex items-center gap-2 text-xs text-stone-600 cursor-pointer select-none border-l border-stone-200 pl-4">
-                      <input
-                        type="checkbox"
-                        checked={config.stripMetadata}
-                        onChange={(e) => updateConfig({ stripMetadata: e.target.checked })}
-                        className="rounded accent-stone-900"
-                      />
-                      <span>Supprimer les métadonnées EXIF / GPS</span>
-                    </label>
-                  </div>
-
-                  <ActionApplyButton
-                    count={items.length}
-                    isProcessing={isBatchProcessing}
-                    status={batchProgress.status}
-                    label="Appliquer le cadrage"
-                    onClick={handleProcessAll}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* 5. RENAME CONTROLS */}
-            {selectedTool === 'rename' && (
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
-                <div className="flex flex-wrap items-center gap-3 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => updateConfig({ renamePattern: 'sequential' })}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${
-                        config.renamePattern === 'sequential'
-                          ? 'bg-stone-900 text-white border-stone-900'
-                          : 'bg-[#FAF8F5] text-stone-700 border-stone-200'
-                      }`}
-                    >
-                      Numérotation (001, 002...)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => updateConfig({ renamePattern: 'keep' })}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${
-                        config.renamePattern === 'keep'
-                          ? 'bg-stone-900 text-white border-stone-900'
-                          : 'bg-[#FAF8F5] text-stone-700 border-stone-200'
-                      }`}
-                    >
-                      Garder le nom original
-                    </button>
-                  </div>
-
-                  {config.renamePattern === 'sequential' && (
-                    <input
-                      type="text"
-                      value={config.customBaseName}
-                      onChange={(e) => updateConfig({ customBaseName: e.target.value })}
-                      placeholder="Nom de base (ex: vacances)"
-                      className="w-40 rounded-xl bg-[#FAF8F5] border border-stone-300 px-3 py-1.5 font-mono text-xs"
-                    />
-                  )}
-
-                  <input
-                    type="text"
-                    value={config.renamePrefix}
-                    onChange={(e) => updateConfig({ renamePrefix: e.target.value })}
-                    placeholder="Préfixe (ex: web_)"
-                    className="w-36 rounded-xl bg-[#FAF8F5] border border-stone-300 px-3 py-1.5 font-mono text-xs"
-                  />
-                  <input
-                    type="text"
-                    value={config.renameSuffix}
-                    onChange={(e) => updateConfig({ renameSuffix: e.target.value })}
-                    placeholder="Suffixe (ex: _hd)"
-                    className="w-36 rounded-xl bg-[#FAF8F5] border border-stone-300 px-3 py-1.5 font-mono text-xs"
-                  />
-                </div>
-
-                <ActionApplyButton
-                  count={items.length}
-                  isProcessing={isBatchProcessing}
-                  status={batchProgress.status}
-                  label="Générer les fichiers"
-                  onClick={handleProcessAll}
-                />
-              </div>
-            )}
-
-            {/* 6. MOCKUP STUDIO CONTROLS INFO */}
-            {selectedTool === 'mockup' && (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-stone-600">
-                <div className="flex items-center gap-2">
-                  <Laptop className="w-4 h-4 text-orange-600" />
-                  <span>
-                    Glissez vos captures d’écran ci-dessous pour les habiller en faux ordinateur ou smartphone.
-                  </span>
-                </div>
-                <span className="font-mono text-[11px] text-stone-400">Export HD 2400×1600 px • PNG</span>
-              </div>
-            )}
-          </section>
-
-          {/* INLINE PROGRESS BAR FOR UPLOAD / DECODING / BATCH PROCESSING */}
-          <ProgressBanner progress={activeProgress} variant="inline" />
-
-          {/* EXPORT BAR WHEN DONE (For multi-image batch tools) */}
-          {doneItems.length > 0 && !isVeolTool && (
-            <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-stone-200 rounded-2xl px-5 py-3 shadow-tactile">
-              <div className="font-mono text-xs text-stone-600">
-                Poids total : <strong className="text-stone-900">{formatBytes(totalProcessedBytes)}</strong>{' '}
-                {totalSavedPercent > 0 && (
-                  <span className="text-emerald-700 font-semibold">(-{totalSavedPercent}%)</span>
+          {/* Inline Feedback Notice (replaces window.alert) */}
+          {notice && (
+            <div
+              role={notice.kind === 'error' ? 'alert' : 'status'}
+              aria-live={notice.kind === 'error' ? 'assertive' : 'polite'}
+              className={`rounded-2xl border px-4 py-3 text-xs font-medium flex items-center justify-between gap-3 shadow-sm ${
+                notice.kind === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  : notice.kind === 'error'
+                  ? 'bg-rose-50 border-rose-200 text-rose-900'
+                  : notice.kind === 'warning'
+                  ? 'bg-amber-50 border-amber-200 text-amber-950'
+                  : 'bg-blue-50 border-blue-200 text-blue-900'
+              }`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                {notice.kind === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : notice.kind === 'error' || notice.kind === 'warning' ? (
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                ) : (
+                  <Info className="w-4 h-4 text-blue-600 shrink-0" />
                 )}
+                <span>{notice.message}</span>
               </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleExportToLocalFolder}
-                  className="px-3.5 py-2 rounded-xl bg-[#FAF8F5] hover:bg-stone-100 text-stone-800 border border-stone-200 text-xs font-semibold flex items-center gap-1.5 transition"
-                >
-                  <FolderCheck className="w-4 h-4 text-stone-600" />
-                  Vers un Dossier
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDownloadZip}
-                  className="px-4 py-2 rounded-xl bg-stone-900 text-white hover:bg-stone-800 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition"
-                >
-                  <Archive className="w-4 h-4" />
-                  Télécharger tout (.ZIP)
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setNotice(null)}
+                aria-label="Fermer la notification"
+                className="p-1 rounded-lg hover:bg-black/5 transition cursor-pointer shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
           )}
 
-          {/* EMPTY STATE DROPZONE OR FILES GRID */}
+          {/* FOCUSED COMMAND BAR */}
+          <ToolControlBar
+            selectedTool={selectedTool}
+            config={config}
+            items={items}
+            isBatchProcessing={isBatchProcessing}
+            batchStatus={batchProgress.status}
+            hasStaleItems={hasStaleItems}
+            avifSupported={avifSupported}
+            checkerboardDark={checkerboardDark}
+            onToggleCheckerboardDark={() => setCheckerboardDark((d) => !d)}
+            onUpdateConfig={updateConfig}
+            onProcessAll={handleProcessAll}
+            onVeolDownload={handleVeolDownload}
+            onInspectFirst={() => items[0] && setInspectedId(items[0].id)}
+          />
+
+          {/* INLINE PROGRESS BAR FOR UPLOAD / DECODING / BATCH PROCESSING */}
+          <ProgressBanner
+            progress={activeProgress}
+            variant="inline"
+            onCancel={handleCancelActiveTask}
+          />
+
+          {/* UNIFIED SMART EXPORT BAR + TOOL CHAINING */}
+          {selectedTool !== 'mockup' && selectedTool !== 'privacy-blur' && (
+            <ExportBar
+              selectedTool={selectedTool}
+              doneItems={doneItems}
+              totalProcessedBytes={totalProcessedBytes}
+              totalSavedPercent={totalSavedPercent}
+              copiedId={copiedId}
+              onCopyClipboard={handleCopyClipboard}
+              onDownloadZip={handleDownloadZip}
+              onExportToLocalFolder={handleExportToLocalFolder}
+              onChainToTool={handleChainCurrentItems}
+            />
+          )}
+
+          {/* WORKSPACE BODY: SPECIALIZED STUDIO, EMPTY DROPZONE, OR IMAGE GRID */}
           {selectedTool === 'mockup' && items.length > 0 ? (
-            <MockupStudio items={items} />
+            <MockupStudio
+              items={items}
+              onChainFiles={handleChainFilesToTool}
+              onNotify={showNotice}
+            />
+          ) : selectedTool === 'privacy-blur' && items.length > 0 ? (
+            <PrivacyBlurEditor
+              items={items}
+              config={config}
+              onUpdateConfig={updateConfig}
+              onUpdateItem={updateItem}
+              onChainFiles={handleChainFilesToTool}
+              onNotify={showNotice}
+            />
           ) : items.length === 0 ? (
             <div
               onClick={() => fileInputRef.current?.click()}
-              className={`cursor-pointer rounded-3xl border-2 border-dashed p-14 text-center transition-all flex flex-col items-center justify-center min-h-[300px] ${
-                isDraggingOver
-                  ? 'border-orange-500 bg-orange-500/5 scale-[0.99]'
-                  : 'border-stone-300 bg-white/70 hover:bg-white hover:border-stone-400 shadow-tactile'
-              }`}
+              className="cursor-pointer rounded-3xl border-2 border-dashed border-stone-300 bg-white/70 hover:bg-white hover:border-stone-400 shadow-tactile p-14 text-center transition-all flex flex-col items-center justify-center min-h-[300px]"
             >
               <div className="w-14 h-14 rounded-2xl bg-stone-900 text-white flex items-center justify-center mb-4 shadow-tactile">
                 <ImagePlus className="w-6 h-6" />
               </div>
               <h2 className="font-display text-xl font-bold text-stone-900">
-                {isVeolTool
-                  ? 'Glissez votre image ici pour la cadrer'
-                  : 'Glissez vos images ou un dossier complet ici'}
+                {dropzoneCopy.title}
               </h2>
-              <p className="text-xs text-stone-500 mt-1 max-w-md">
-                {isVeolTool
-                  ? `Cadrage interactif ${config.targetWidth}×${config.targetHeight} px • Passage auto en 72 ppp • Astuce : Cmd+V pour coller une image`
-                  : 'Traitement par lot instantané • JPG, PNG, WebP, AVIF, SVG • Dossiers complets ou Cmd+V pour coller'}
+              <p className="text-xs text-stone-500 mt-1.5 max-w-lg leading-relaxed">
+                {dropzoneCopy.subtitle}
               </p>
 
               <div
@@ -2595,16 +1173,16 @@ export function App() {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-4 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold flex items-center gap-2 shadow-tactile transition"
+                  className="px-4 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold flex items-center gap-2 shadow-tactile transition cursor-pointer"
                 >
                   <ImagePlus className="w-4 h-4" />
-                  {isVeolTool ? 'Sélectionner une image' : 'Sélectionner des images'}
+                  {dropzoneCopy.primaryBtn}
                 </button>
                 {!isVeolTool && (
                   <button
                     type="button"
                     onClick={() => folderInputRef.current?.click()}
-                    className="px-4 py-2.5 rounded-xl bg-white hover:bg-stone-100 text-stone-800 border border-stone-300 text-xs font-semibold flex items-center gap-2 shadow-tactile transition"
+                    className="px-4 py-2.5 rounded-xl bg-white hover:bg-stone-100 text-stone-800 border border-stone-300 text-xs font-semibold flex items-center gap-2 shadow-tactile transition cursor-pointer"
                   >
                     <FolderUp className="w-4 h-4 text-orange-600" />
                     Importer un dossier entier
@@ -2613,162 +1191,23 @@ export function App() {
               </div>
             </div>
           ) : (
-            <div
-              className={`grid gap-5 ${
-                isVeolTool || items.length === 1
-                  ? 'grid-cols-1'
-                  : selectedTool === 'veol-banner'
-                  ? 'grid-cols-1 lg:grid-cols-2'
-                  : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
-              }`}
-            >
-              {items.map((item, idx) => {
-                const savedPct =
-                  item.processedSize && item.originalSize
-                    ? Math.round(((item.originalSize - item.processedSize) / item.originalSize) * 100)
-                    : null;
-
-                return (
-                  <div
-                    key={item.id}
-                    className="group bg-white rounded-2xl border border-stone-200/90 hover:border-stone-400 shadow-tactile overflow-hidden flex flex-col transition"
-                  >
-                    {/* Image Viewport — Shows interactive darkened Crop Frame in VEOL & Crop modes */}
-                    {hasInteractiveCropCard ? (
-                      <div className="relative">
-                        <VeolCropViewport
-                          item={item}
-                          targetWidth={isVeolTool ? config.targetWidth : undefined}
-                          targetHeight={isVeolTool ? config.targetHeight : undefined}
-                          aspectRatio={parsedCropAspectRatio}
-                          rotateDeg={config.rotateDeg}
-                          flipH={config.flipH}
-                          flipV={config.flipV}
-                          onUpdatePanZoom={(panX, panY, zoom, commit) =>
-                            handleVeolPanZoomChange(item, idx, panX, panY, zoom, commit)
-                          }
-                          onUpdateCustomCrop={(cropBox, commit) =>
-                            handleCustomCropChange(item, idx, cropBox, commit)
-                          }
-                          onOpenInspector={() => setInspectedId(item.id)}
-                        />
-                        {item.status === 'processing' && (
-                          <div className="absolute top-2.5 left-2.5 pointer-events-none">
-                            <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-stone-900 text-white flex items-center gap-1">
-                              <Loader2 className="w-3 h-3 animate-spin" /> CALCUL...
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ) : item.status === 'error' || item.originalWidth === 0 ? (
-                      <div className="relative h-44 bg-stone-900/95 flex flex-col items-center justify-center p-4 text-center border-b border-stone-200">
-                        <AlertTriangle className="w-7 h-7 text-amber-500 mb-2" />
-                        <p className="font-semibold text-xs text-white">Fichier non décodable</p>
-                        <p className="text-[11px] text-stone-400 mt-1 line-clamp-3">
-                          {item.errorMsg || 'Format HEIF/HEIC non pris en charge.'}
-                        </p>
-                      </div>
-                    ) : (
-                      <div
-                        onClick={() => setInspectedId(item.id)}
-                        className={`relative h-44 ${
-                          selectedTool === 'logo-white'
-                            ? 'bg-checkerboard-dark'
-                            : 'bg-checkerboard-light'
-                        } flex items-center justify-center overflow-hidden border-b border-stone-100 cursor-pointer`}
-                      >
-                        <img
-                          src={item.processedUrl || item.originalUrl}
-                          alt={item.file.name}
-                          draggable={false}
-                          className="max-h-full max-w-full object-contain transition-transform duration-150 select-none"
-                        />
-
-                        {item.status === 'processing' && (
-                          <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 pointer-events-none">
-                            <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-md bg-stone-900 text-white flex items-center gap-1">
-                              <Loader2 className="w-3 h-3 animate-spin" /> CALCUL...
-                            </span>
-                          </div>
-                        )}
-
-                        <div className="absolute inset-0 bg-stone-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <span className="px-3 py-1.5 rounded-xl bg-white text-stone-900 font-semibold text-xs flex items-center gap-1.5 shadow-lg">
-                            <Eye className="w-3.5 h-3.5" />
-                            Avant/Après • Pipette • Crop
-                          </span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Card Footer */}
-                    <div className="p-3.5 flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div
-                          className="font-mono text-xs font-semibold text-stone-800 truncate"
-                          title={item.outputFileName || item.relativePath}
-                        >
-                          {item.outputFileName || item.relativePath}
-                        </div>
-                        <div className="font-mono text-[11px] text-stone-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                          <span>
-                            {item.originalWidth}×{item.originalHeight} ({formatBytes(item.originalSize)})
-                          </span>
-                          {item.processedSize !== undefined && (
-                            <span className="text-emerald-700 font-bold">
-                              → {item.processedWidth}×{item.processedHeight} ({formatBytes(item.processedSize)})
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1 shrink-0">
-                        {item.processedUrl ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleCopyClipboard(item)}
-                              className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 transition"
-                              title="Copier l'image dans le presse-papier"
-                            >
-                              {copiedId === item.id ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              ) : (
-                                <Copy className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                            <a
-                              href={item.processedUrl}
-                              download={item.outputFileName || item.file.name}
-                              className="p-2 rounded-xl bg-stone-900 hover:bg-orange-600 text-white transition"
-                              title="Télécharger"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </a>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleProcessSingle(item, idx)}
-                            className="px-2.5 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 font-mono text-[11px] font-semibold"
-                          >
-                            Go
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => removeItem(item.id)}
-                          className="p-2 rounded-xl text-stone-400 hover:text-rose-600 hover:bg-stone-100 transition"
-                          title="Retirer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <ImageGrid
+              items={items}
+              selectedTool={selectedTool}
+              config={config}
+              currentConfigSig={currentConfigSig}
+              isVeolTool={isVeolTool}
+              hasInteractiveCropCard={hasInteractiveCropCard}
+              parsedCropAspectRatio={parsedCropAspectRatio}
+              checkerboardDark={checkerboardDark}
+              copiedId={copiedId}
+              onInspect={(id) => setInspectedId(id)}
+              onProcessSingle={handleProcessSingle}
+              onCopyClipboard={handleCopyClipboard}
+              onRemoveItem={removeItem}
+              onVeolPanZoomChange={handleVeolPanZoomChange}
+              onCustomCropChange={handleCustomCropChange}
+            />
           )}
         </main>
       )}
@@ -2776,17 +1215,38 @@ export function App() {
       {/* Interactive Inspector Modal */}
       <InspectorModal
         item={inspectedItem}
+        itemIndex={inspectedIndex >= 0 ? inspectedIndex : 0}
+        totalItems={items.length}
+        onNavigate={handleNavigateInspector}
         config={config}
         activeToolId={selectedTool || undefined}
         onClose={() => setInspectedId(null)}
         onUpdateConfig={updateConfig}
         onUpdateItem={updateItem}
-        onProcessSingle={(it) => handleProcessSingle(it)}
+        onProcessSingle={handleProcessSingle}
         onCopyClipboard={handleCopyClipboard}
         copiedId={copiedId}
       />
 
-      {/* Legal & Privacy Modal (100% Local / GDPR / LCEN) */}
+      {/* Safe Switch Tool / Chain Dialog */}
+      <SwitchToolDialog
+        pendingTool={pendingSwitchTool}
+        itemsCount={items.length}
+        hasProcessed={doneItems.length > 0}
+        onTransfer={() => {
+          const target = pendingSwitchTool;
+          setPendingSwitchTool(undefined);
+          if (target) handleChainCurrentItems(target);
+        }}
+        onResetAndSwitch={() => {
+          const target = pendingSwitchTool;
+          setPendingSwitchTool(undefined);
+          applyToolSelectionImmediate(target ?? null);
+        }}
+        onCancel={() => setPendingSwitchTool(undefined)}
+      />
+
+      {/* Legal & Privacy Modal */}
       <LegalModal
         isOpen={isLegalModalOpen}
         onClose={() => setIsLegalModalOpen(false)}
@@ -2797,36 +1257,6 @@ export function App() {
     </div>
   );
 }
-
-const ActionApplyButton: React.FC<{
-  count: number;
-  isProcessing: boolean;
-  status: string;
-  label: string;
-  icon?: React.ReactNode;
-  onClick: () => void;
-}> = ({ count, isProcessing, status, label, icon, onClick }) => (
-  <button
-    type="button"
-    disabled={count === 0 || isProcessing}
-    onClick={onClick}
-    className="shrink-0 px-5 py-3 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:bg-stone-200 disabled:text-stone-400 text-white font-semibold text-xs shadow-tactile flex items-center justify-center gap-2 transition cursor-pointer disabled:cursor-not-allowed"
-  >
-    {isProcessing ? (
-      <>
-        <Loader2 className="w-4 h-4 animate-spin" />
-        <span className="font-mono">{status}</span>
-      </>
-    ) : (
-      <>
-        {icon || <Sparkles className="w-4 h-4" />}
-        <span>
-          {label} {count > 1 ? `(${count})` : ''}
-        </span>
-      </>
-    )}
-  </button>
-);
 
 function yieldToPaint(): Promise<void> {
   return new Promise((resolve) => {
