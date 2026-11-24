@@ -995,15 +995,11 @@ export function App() {
         selectedTool={selectedTool}
         itemsCount={items.length}
         onRequestSelectTool={handleRequestSelectTool}
-        onOpenLegal={() => setIsLegalModalOpen(true)}
       />
 
       {/* VIEW 1: GOAL-ORIENTED HOME HUB */}
       {!selectedTool ? (
-        <HomeHub
-          onSelectTool={(id) => applyToolSelectionImmediate(id)}
-          onOpenLegal={() => setIsLegalModalOpen(true)}
-        />
+        <HomeHub onSelectTool={(id) => applyToolSelectionImmediate(id)} />
       ) : (
         /* VIEW 2: FOCUSED SINGLE-RESULT WORKSPACE */
         <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 flex flex-col gap-5">
@@ -1211,6 +1207,20 @@ export function App() {
           )}
         </main>
       )}
+
+      {/* Shared Footer */}
+      <footer className="max-w-6xl w-full mx-auto px-4 sm:px-6 mt-auto pt-6 pb-8">
+        <div className="pt-6 border-t border-stone-200/80 flex flex-wrap items-center justify-between gap-4 text-xs text-stone-500 font-mono">
+          <span>Penl.img</span>
+          <button
+            type="button"
+            onClick={() => setIsLegalModalOpen(true)}
+            className="hover:text-stone-900 underline underline-offset-2 transition cursor-pointer"
+          >
+            Mentions légales &amp; Confidentialité
+          </button>
+        </div>
+      </footer>
 
       {/* Interactive Inspector Modal */}
       <InspectorModal

@@ -1,16 +1,15 @@
 import React from 'react';
 import { ToolId } from '../types';
 import { VEOL_TOOLS, MAIN_TOOLS } from '../data/tools';
-import { ArrowRight, ExternalLink, ShieldCheck } from 'lucide-react';
+import { ArrowRight, ExternalLink } from 'lucide-react';
 
 interface HomeHubProps {
   onSelectTool: (toolId: ToolId) => void;
-  onOpenLegal: () => void;
 }
 
-export const HomeHub: React.FC<HomeHubProps> = ({ onSelectTool, onOpenLegal }) => {
+export const HomeHub: React.FC<HomeHubProps> = ({ onSelectTool }) => {
   return (
-    <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-10 md:py-14 flex flex-col justify-between">
+    <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-10 md:py-14">
       <div className="space-y-8">
         {/* Hero Header */}
         <div className="max-w-2xl">
@@ -142,22 +141,6 @@ export const HomeHub: React.FC<HomeHubProps> = ({ onSelectTool, onOpenLegal }) =
           </div>
         </div>
       </div>
-
-      <footer className="mt-14 pt-6 border-t border-stone-200/80 flex flex-wrap items-center justify-between gap-4 text-xs text-stone-500 font-mono">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          <span>Penl.img</span>
-        </div>
-        <div>
-          <button
-            type="button"
-            onClick={onOpenLegal}
-            className="hover:text-stone-900 underline underline-offset-2 transition cursor-pointer"
-          >
-            Mentions légales & Confidentialité (100% Local)
-          </button>
-        </div>
-      </footer>
     </main>
   );
 };

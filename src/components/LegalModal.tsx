@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { X, ShieldCheck, Scale, Server, HardDrive, Cookie, ExternalLink, FileText, AlertTriangle } from 'lucide-react';
+import { X, ShieldCheck, Scale, Server, Cookie, ExternalLink } from 'lucide-react';
 
 interface LegalModalProps {
   isOpen: boolean;
@@ -138,13 +138,21 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose }) => {
           </h3>
           <div className="bg-emerald-500/10 border border-emerald-600/20 rounded-xl p-3.5 text-emerald-950 space-y-2">
             <p className="font-medium text-xs sm:text-sm">
-              Toutes les opérations d'édition (redimensionnement, compression, conversion, recadrage, pipette de suppression de fond et mockups) sont réalisées <strong>exclusivement dans la mémoire vive de votre navigateur web</strong>.
+              Toutes les opérations des outils intégrés (formats VEOL, redimensionnement, compression, conversion dont décodage local HEIC/HEIF iPhone via WebCodecs / libheif, recadrage & rotation, suppression de fond, passage de logo en blanc PNG/SVG, floutage et masquage RGPD par flou gaussien / mosaïque / bandeau opaque, renommage par lot et création de mockups) sont exécutées <strong>exclusivement dans la mémoire vive (RAM) de votre navigateur web</strong>.
             </p>
             <ul className="text-emerald-900 text-xs space-y-1 list-disc list-inside">
-              <li>Aucune image, métadonnée EXIF ou coordonnée GPS ne quitte votre appareil.</li>
-              <li>Aucun transfert réseau ni téléversement vers un serveur ou un service cloud.</li>
-              <li>Aucun modèle distant ni ressource tierce externe n'est téléchargé lors de l'utilisation.</li>
-              <li>L'application s'exécute de manière entièrement autonome, même sans connexion Internet.</li>
+              <li>
+                <strong>Aucune donnée ne quitte votre navigateur :</strong> aucune image, fichier, nom de fichier, texte saisi, métadonnée EXIF ou coordonnée GPS n’est transmis ni stocké côté serveur.
+              </li>
+              <li>
+                Aucun transfert réseau ni téléversement vers un serveur, une API ou un service cloud — y compris dans le studio Mockup (l’URL saisie pour l’aperçu navigateur est dessinée localement sur Canvas et n’est jamais interrogée).
+              </li>
+              <li>
+                Les fonctions d’export vers un dossier local (<em>File System Access API</em>) et de copie dans le presse-papier (<em>Clipboard API</em>) s’exécutent uniquement sur votre appareil, à votre initiative explicite ; la mémoire est libérée à la fermeture ou au rechargement de l’onglet.
+              </li>
+              <li>
+                L’application s’exécute de manière autonome sans aucune ressource tierce distante lors de l’utilisation des outils intégrés (seule la tuile <strong>QrCode</strong>, signalée « Lien externe », ouvre le site distinct <em>qrcode.thmarchand.fr</em> dans un nouvel onglet, sans aucun transfert de fichier depuis Penl.img).
+              </li>
             </ul>
           </div>
         </section>
@@ -197,10 +205,10 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose }) => {
             <Cookie className="w-4 h-4 text-stone-500 shrink-0 mt-0.5" />
             <div className="space-y-1 text-xs">
               <p>
-                Ce site <strong>n'utilise aucun cookie traceur, publicitaire ou de mesure d'audience</strong>.
+                Ce site <strong>n’utilise aucun cookie</strong> (ni traceur, ni publicitaire, ni mesure d’audience), et n’enregistre aucune donnée utilisateur dans <code className="font-mono text-[11px]">localStorage</code>, <code className="font-mono text-[11px]">sessionStorage</code> ou <code className="font-mono text-[11px]">IndexedDB</code>.
               </p>
               <p className="text-[11px] text-stone-500">
-                Seul le cache technique de votre navigateur (<em>Cache Storage</em> via Service Worker PWA) est sollicité pour permettre le fonctionnement hors-ligne et la rapidité d'exécution. Ce mécanisme est strictement nécessaire à la fourniture du service expressément demandé par l'utilisateur et entre dans le champ d'exemption de consentement prévu par l'article 82 de la loi Informatique et Libertés et les lignes directrices de la CNIL.
+                Seul le cache technique de votre navigateur (<em>Cache Storage</em> via Service Worker PWA, limité aux fichiers statiques de même origine) est sollicité pour permettre le fonctionnement hors-ligne et la rapidité d’exécution. Ce mécanisme est strictement nécessaire à la fourniture du service expressément demandé par l’utilisateur et entre dans le champ d’exemption de consentement prévu par l’article 82 de la loi Informatique et Libertés et les lignes directrices de la CNIL.
               </p>
             </div>
           </div>
@@ -230,7 +238,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose }) => {
             <span className="font-mono text-xs text-orange-600">07.</span> Propriété Intellectuelle & Licences Libres
           </h3>
           <p className="bg-stone-50 border border-stone-200/70 rounded-xl p-3 text-stone-700 text-xs">
-            Le code source de Penl.img est distribué sous <strong>licence libre MIT</strong>. Le décodage local HEIF/HEIC s'appuie sur la bibliothèque open source <em>heic-to / libheif</em> (licence libre LGPL-3.0). Les polices typographiques intégrées (Plus Jakarta Sans, Inter, JetBrains Mono) sont distribuées sous licence libre <em>SIL Open Font License 1.1</em>. Les icônes vectorielles sont issues du projet <em>Lucide Icons</em> sous licence ISC/MIT.
+            Le code source de Penl.img est distribué sous <strong>licence libre MIT</strong>. Le décodage local HEIF/HEIC s’appuie sur la bibliothèque open source <em>heic-to / libheif</em> (licence libre LGPL-3.0) et l’archivage ZIP 100 % côté client sur <em>JSZip</em> (double licence MIT / GPLv3). Les polices typographiques intégrées (Plus Jakarta Sans, Inter, JetBrains Mono) sont auto-hébergées sous licence libre <em>SIL Open Font License 1.1</em>. Les icônes vectorielles sont issues du projet <em>Lucide Icons</em> sous licence ISC/MIT.
           </p>
         </section>
       </div>
