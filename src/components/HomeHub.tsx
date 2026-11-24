@@ -20,7 +20,11 @@ export const HomeHub: React.FC<HomeHubProps> = ({ onSelectTool }) => {
             Quel résultat voulez-vous obtenir ?
           </h1>
           <p className="text-stone-600 text-base mt-2.5 leading-relaxed">
-            Sélectionnez un outil ou glissez directement vos images (HEIC iPhone, JPG, PNG, WebP, SVG) ou un dossier complet. Aucune donnée ne quitte votre navigateur.
+            Sélectionnez un outil ou glissez directement vos images (HEIC iPhone, JPG, PNG, WebP, SVG) ou un dossier complet.
+          </p>
+          <p className="inline-flex items-start sm:items-center gap-2 mt-3 px-3.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-600/25 text-emerald-950 text-sm font-semibold leading-snug">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 mt-1.5 sm:mt-0" aria-hidden="true" />
+            <span>Aucune donnée ne quitte votre navigateur et aucun fichier n’est transmis à un serveur.</span>
           </p>
         </div>
 
