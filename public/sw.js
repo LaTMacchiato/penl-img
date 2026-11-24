@@ -1,4 +1,4 @@
-const CACHE_NAME = 'penl-img-cache-v9';
+const CACHE_NAME = 'penl-img-cache-v10';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
